@@ -1,0 +1,6 @@
+{
+  "name": "Phuket Trusted Local - Field Inspection & PDF Report",
+  "description": "Mobile-first field inspection and instant 3-document PDF generator (Photo Evidence Log, Findings & Action Plan, Quotation) for Phuket property audits.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
