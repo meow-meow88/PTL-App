@@ -2,6 +2,95 @@ export type CustomerGroup = 'expat' | 'villa_owner' | 'rental_investor';
 
 export type JobStatus = 'Inspection' | 'Quoted' | 'Paid' | 'Completed';
 
+// PTL V2 Solo Operator Navigation Tabs
+export type MainNavTab =
+  | 'my_day'
+  | 'customers'
+  | 'properties'
+  | 'jobs'
+  | 'money'
+  | 'documents'
+  | 'vendors'
+  | 'calendar'
+  | 'settings';
+
+// PTL V2 Customer Model
+export type CustomerType =
+  | 'Expat'
+  | 'Overseas Property Owner'
+  | 'Local Customer'
+  | 'Property Manager'
+  | 'Other';
+
+export interface Customer {
+  id: string; // Customer ID, e.g. CUST-001
+  name: string; // Customer full name
+  fullName?: string; // Compatibility alias
+  preferredName: string;
+  email: string;
+  phone: string;
+  lineWhatsapp: string;
+  lineOrWhatsapp?: string; // Compatibility alias
+  customerType: CustomerType;
+  status: 'Active' | 'Lead' | 'Past' | 'Inactive';
+  notes: string;
+  createdAt: string;
+  lastContact: string;
+  nextFollowUp?: string;
+  followUpNote?: string;
+}
+
+// PTL V2 Property Model
+export type PropertyType =
+  | 'Villa'
+  | 'Condo'
+  | 'Estate'
+  | 'Commercial'
+  | 'Other';
+
+export type PropertySystem =
+  | 'CCTV'
+  | 'WiFi'
+  | 'Internet'
+  | 'Smart Home'
+  | 'Air Conditioning'
+  | 'Water'
+  | 'Electrical'
+  | 'Security';
+
+export interface Property {
+  id: string; // Property ID, e.g. PROP-001
+  customerId: string; // Belongs to Customer.id
+  name: string; // e.g. Green Mile Villa
+  propertyName?: string; // Compatibility alias
+  propertyType: PropertyType;
+  address: string;
+  area: string; // e.g. Kathu, Nai Harn, Rawai, Patong, Bang Tao, Cherngtalay
+  googleMapsUrl?: string;
+  accessInformation: string; // Access code, lockbox, guard pass
+  accessInfo?: string; // Compatibility alias
+  contactPerson?: string;
+  notes: string;
+  importantNotes?: string; // Compatibility alias
+  systems: PropertySystem[]; // CCTV, WiFi, Internet, Smart Home, etc.
+  systemsInstalled?: string[]; // Compatibility alias
+  lastInspection?: string;
+  nextInspection?: string;
+}
+
+// Quick Job Service Types
+export type QuickJobServiceType =
+  | 'Remote Support'
+  | 'Home Visit'
+  | 'Home Watch'
+  | 'Vendor Coordination'
+  | 'Transportation'
+  | 'Pet Assistance'
+  | 'Hospital Assistance'
+  | 'CCTV'
+  | 'WiFi / Internet'
+  | 'Other';
+
 export type FindingStatus =
   | 'Power Tripped'
   | 'Not Working'
@@ -76,6 +165,8 @@ export interface QuotationData {
 export interface InspectionJob {
   id: string; // Job_ID: e.g. PTL-INSP-20260818-004
   clientId: string; // Client_ID: e.g. CL-MAZEN-001
+  customerId?: string; // Links to Customer.id
+  propertyId?: string; // Links to Property.id
   villaName: string; // Villa_Name: e.g. Green Mile Villa, Kathu
   customerName: string;
   customerGroup: CustomerGroup;
@@ -90,6 +181,15 @@ export interface InspectionJob {
   notes?: string;
   items: InspectionItem[];
   quotation: QuotationData;
+  // Solo Operator PTL V2 Fields:
+  scheduledDate?: string; // e.g. 2026-09-17 or Today
+  scheduledTime?: string; // e.g. 10:30 AM
+  requestDescription?: string; // Direct request text
+  price?: number; // Quick agreed price in THB
+  isSimpleJob?: boolean; // If true, lightweight job (inspection is optional)
+  waitingOn?: 'customer' | 'vendor' | 'parts' | 'payment' | 'none';
+  actionRequired?: string; // e.g. "Invoice needs follow-up", "Confirm appointment tomorrow"
+  completedAt?: string;
 }
 
 // ----------------------------------------------------

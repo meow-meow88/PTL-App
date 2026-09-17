@@ -14,7 +14,14 @@ import {
   Info,
   Sparkles,
 } from 'lucide-react';
-import { InspectionJob, InspectionItem, CustomerGroup } from './types';
+import {
+  InspectionJob,
+  InspectionItem,
+  CustomerGroup,
+  Customer,
+  Property,
+  MainNavTab,
+} from './types';
 import {
   sampleJobKMazen,
   sampleJobRobertMiller,
@@ -36,6 +43,21 @@ import { MollyExpressQuoteModal } from './components/MollyExpressQuoteModal';
 import { MobileGuideModal } from './components/MobileGuideModal';
 import { GoogleDriveModal } from './components/GoogleDriveModal';
 import { BackupRestoreModal } from './components/BackupRestoreModal';
+import { Navigation } from './components/Navigation';
+import { MyDayView } from './components/MyDayView';
+import { CustomersView } from './components/CustomersView';
+import { PropertiesView } from './components/PropertiesView';
+import { JobsView } from './components/JobsView';
+import { QuickJobModal } from './components/QuickJobModal';
+import { SecondaryViews } from './components/SecondaryViews';
+import {
+  loadCustomers,
+  saveCustomers,
+  loadProperties,
+  saveProperties,
+  ensureCustomerAndPropertyForJob,
+} from './utils/crmStorage';
+import { initialCustomersSeed, initialPropertiesSeed } from './data/crmSeedData';
 import {
   safeGetLocalStorage,
   safeSetLocalStorage,
@@ -91,6 +113,16 @@ function sanitizeJob(j: any): InspectionJob {
       contingencies: Array.isArray(j.quotation?.contingencies) ? j.quotation.contingencies : [],
       mollyNotes: j.quotation?.mollyNotes || '',
     },
+    customerId: j.customerId,
+    propertyId: j.propertyId,
+    scheduledDate: j.scheduledDate || j.inspectionDate || 'Today',
+    scheduledTime: j.scheduledTime || '10:00 AM',
+    requestDescription: j.requestDescription || '',
+    price: typeof j.price === 'number' ? j.price : undefined,
+    isSimpleJob: Boolean(j.isSimpleJob),
+    waitingOn: j.waitingOn || (j.status === 'Quoted' ? 'customer' : 'none'),
+    actionRequired: j.actionRequired,
+    completedAt: j.completedAt,
   };
 }
 
@@ -207,6 +239,29 @@ export default function App() {
         } else if (isMounted) {
           setLastSyncStatus('ระบบพร้อมใช้งาน • บันทึกอัตโนมัติ 3 ชั้น ปลอดภัย 100%');
         }
+
+        // 4. Hydrate CRM Customers and Properties
+        try {
+          const [loadedCusts, loadedProps] = await Promise.all([loadCustomers(), loadProperties()]);
+          let workingCusts = loadedCusts.length > 0 ? loadedCusts : initialCustomersSeed;
+          let workingProps = loadedProps.length > 0 ? loadedProps : initialPropertiesSeed;
+
+          // Reconcile jobs with CRM
+          for (const j of targetJobs) {
+            const syncRes = ensureCustomerAndPropertyForJob(j, workingCusts, workingProps);
+            workingCusts = syncRes.updatedCustomers;
+            workingProps = syncRes.updatedProperties;
+          }
+
+          if (isMounted) {
+            setCustomers(workingCusts);
+            setProperties(workingProps);
+            saveCustomers(workingCusts);
+            saveProperties(workingProps);
+          }
+        } catch (crmErr) {
+          console.error('CRM load error:', crmErr);
+        }
       } catch (err) {
         console.error('Durable hydration error:', err);
       } finally {
@@ -223,7 +278,17 @@ export default function App() {
     };
   }, []);
 
-  const [viewMode, setViewMode] = useState<'inspection' | 'report' | 'dashboard'>('inspection');
+  const [activeTab, setActiveTab] = useState<MainNavTab>('my_day');
+  const [viewMode, setViewMode] = useState<'main' | 'inspection' | 'report' | 'dashboard'>('main');
+  const [previousViewMode, setPreviousViewMode] = useState<'main' | 'inspection'>('main');
+  const [customers, setCustomers] = useState<Customer[]>(initialCustomersSeed);
+  const [properties, setProperties] = useState<Property[]>(initialPropertiesSeed);
+  const [isQuickJobModalOpen, setIsQuickJobModalOpen] = useState(false);
+  const [quickJobPresetCustomer, setQuickJobPresetCustomer] = useState<string | null>(null);
+  const [quickJobPresetProperty, setQuickJobPresetProperty] = useState<string | null>(null);
+  const [selectedCustomerIdForView, setSelectedCustomerIdForView] = useState<string | null>(null);
+  const [selectedPropertyIdForView, setSelectedPropertyIdForView] = useState<string | null>(null);
+
   const [isFindingModalOpen, setIsFindingModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InspectionItem | null>(null);
   const [isNewJobModalOpen, setIsNewJobModalOpen] = useState(false);
@@ -235,6 +300,63 @@ export default function App() {
   const [isMobileGuideOpen, setIsMobileGuideOpen] = useState(false);
   const [isGoogleDriveModalOpen, setIsGoogleDriveModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ title: string; subtitle?: string } | null>(null);
+
+  const handleSaveCustomer = async (updatedCustomer: Customer) => {
+    setCustomers((prev) => {
+      const exists = prev.some((c) => c.id === updatedCustomer.id);
+      const next = exists
+        ? prev.map((c) => (c.id === updatedCustomer.id ? updatedCustomer : c))
+        : [updatedCustomer, ...prev];
+      saveCustomers(next);
+      return next;
+    });
+    setToastMessage({
+      title: 'Customer Profile Saved',
+      subtitle: `${updatedCustomer.fullName || updatedCustomer.preferredName} updated`,
+    });
+  };
+
+  const handleSaveProperty = async (updatedProperty: Property) => {
+    setProperties((prev) => {
+      const exists = prev.some((p) => p.id === updatedProperty.id);
+      const next = exists
+        ? prev.map((p) => (p.id === updatedProperty.id ? updatedProperty : p))
+        : [updatedProperty, ...prev];
+      saveProperties(next);
+      return next;
+    });
+    setToastMessage({
+      title: 'Property Profile Saved',
+      subtitle: `${updatedProperty.propertyName} updated`,
+    });
+  };
+
+  const handleSaveQuickJob = (newJob: InspectionJob) => {
+    setJobsList((prev) => [newJob, ...prev]);
+    setActiveJobId(newJob.id);
+
+    const syncRes = ensureCustomerAndPropertyForJob(newJob, customers, properties);
+    if (syncRes.updatedCustomers.length !== customers.length) {
+      setCustomers(syncRes.updatedCustomers);
+      saveCustomers(syncRes.updatedCustomers);
+    }
+    if (syncRes.updatedProperties.length !== properties.length) {
+      setProperties(syncRes.updatedProperties);
+      saveProperties(syncRes.updatedProperties);
+    }
+
+    setToastMessage({
+      title: 'Quick Job Created',
+      subtitle: `${newJob.villaName} • ${newJob.serviceType}`,
+    });
+
+    if (!newJob.isSimpleJob) {
+      setPreviousViewMode('main');
+      setViewMode('inspection');
+    } else {
+      setActiveTab('jobs');
+    }
+  };
 
   // Auto-dismiss toast after 4.5 seconds
   useEffect(() => {
@@ -607,13 +729,14 @@ export default function App() {
           jobs={jobsList}
           onSelectJob={(jobId) => {
             setActiveJobId(jobId);
+            setPreviousViewMode('dashboard');
             setViewMode('inspection');
           }}
           onOpenNewJob={() => {
             setIsNewJobModalOpen(true);
             setViewMode('inspection');
           }}
-          onBackToInspection={() => setViewMode('inspection')}
+          onBackToInspection={() => setViewMode(previousViewMode || 'main')}
           onOpenVarvaraSocial={() => setIsVarvaraSocialOpen(true)}
         />
         {isVarvaraSocialOpen && (
@@ -631,7 +754,7 @@ export default function App() {
       <>
         <ReportScreen
           job={job}
-          onBack={() => setViewMode('inspection')}
+          onBack={() => setViewMode(previousViewMode || 'main')}
           onUpdateQuotation={(updatedQuotation) =>
             updateCurrentJob((prev) => ({ ...prev, quotation: updatedQuotation }))
           }
@@ -668,6 +791,243 @@ export default function App() {
     );
   }
 
+  if (viewMode === 'main') {
+    return (
+      <div className="min-h-screen bg-slate-100 flex flex-col font-sans w-full max-w-full overflow-x-hidden">
+        <Navigation
+          activeTab={activeTab}
+          onSelectTab={(tab) => {
+            setActiveTab(tab);
+            setSelectedCustomerIdForView(null);
+            setSelectedPropertyIdForView(null);
+          }}
+          onOpenQuickJob={() => {
+            setQuickJobPresetCustomer(null);
+            setQuickJobPresetProperty(null);
+            setIsQuickJobModalOpen(true);
+          }}
+          onOpenMollyExpress={() => setIsMollyExpressOpen(true)}
+          onOpenBackupModal={() => setIsBackupModalOpen(true)}
+          onOpenGoogleDrive={() => setIsGoogleDriveModalOpen(true)}
+          todayCount={jobsList.filter((j) => j.status !== 'Completed').length}
+          urgentAttentionCount={
+            jobsList.filter(
+              (j) =>
+                j.status === 'Quoted' ||
+                j.waitingOn === 'customer' ||
+                j.waitingOn === 'vendor'
+            ).length
+          }
+        />
+
+        {/* Floating Toast Notification */}
+        {toastMessage && (
+          <div className="fixed top-16 left-3 right-3 sm:left-auto sm:right-6 sm:max-w-md z-50 animate-in fade-in slide-in-from-top-3 duration-200">
+            <div className="bg-[#102a4e] text-white p-3 sm:p-3.5 rounded-2xl shadow-2xl border border-sky-400/40 flex items-start gap-3">
+              <span className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-sky-500/20 text-sky-300 flex items-center justify-center shrink-0 mt-0.5">
+                <Sparkles className="w-4 h-4" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-xs sm:text-sm text-white">{toastMessage.title}</div>
+                {toastMessage.subtitle && (
+                  <div className="text-[11px] text-sky-200/90 mt-0.5 truncate">{toastMessage.subtitle}</div>
+                )}
+              </div>
+              <button
+                onClick={() => setToastMessage(null)}
+                className="text-slate-400 hover:text-white p-1 text-sm font-bold leading-none"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
+        <main className="max-w-7xl mx-auto w-full px-3 sm:px-6 py-5 flex-1 min-w-0">
+          {activeTab === 'my_day' && (
+            <MyDayView
+              jobs={jobsList}
+              customers={customers}
+              properties={properties}
+              onOpenJobInspection={(jobId) => {
+                setActiveJobId(jobId);
+                setPreviousViewMode('main');
+                setViewMode('inspection');
+              }}
+              onOpenJobQuotation={(jobId) => {
+                setActiveJobId(jobId);
+                setPreviousViewMode('main');
+                setViewMode('report');
+              }}
+              onOpenQuickJob={() => setIsQuickJobModalOpen(true)}
+              onSelectCustomer={(custId) => {
+                setSelectedCustomerIdForView(custId);
+                setActiveTab('customers');
+              }}
+              onSelectProperty={(propId) => {
+                setSelectedPropertyIdForView(propId);
+                setActiveTab('properties');
+              }}
+              onUpdateJobStatus={(jobId, newStatus) => {
+                setJobsList((prev) =>
+                  prev.map((j) => (j.id === jobId ? { ...j, status: newStatus } : j))
+                );
+              }}
+            />
+          )}
+
+          {activeTab === 'customers' && (
+            <CustomersView
+              customers={customers}
+              properties={properties}
+              jobs={jobsList}
+              onSaveCustomer={handleSaveCustomer}
+              onOpenQuickJobForCustomer={(cust) => {
+                setQuickJobPresetCustomer(cust.id);
+                setIsQuickJobModalOpen(true);
+              }}
+              onOpenJobInspection={(jobId) => {
+                setActiveJobId(jobId);
+                setPreviousViewMode('main');
+                setViewMode('inspection');
+              }}
+              onOpenJobQuotation={(jobId) => {
+                setActiveJobId(jobId);
+                setPreviousViewMode('main');
+                setViewMode('report');
+              }}
+              initialSelectedCustomerId={selectedCustomerIdForView}
+            />
+          )}
+
+          {activeTab === 'properties' && (
+            <PropertiesView
+              properties={properties}
+              customers={customers}
+              jobs={jobsList}
+              onSaveProperty={handleSaveProperty}
+              onOpenQuickJobForProperty={(prop) => {
+                setQuickJobPresetProperty(prop.id);
+                setQuickJobPresetCustomer(prop.customerId);
+                setIsQuickJobModalOpen(true);
+              }}
+              onOpenJobInspection={(jobId) => {
+                setActiveJobId(jobId);
+                setPreviousViewMode('main');
+                setViewMode('inspection');
+              }}
+              onOpenJobQuotation={(jobId) => {
+                setActiveJobId(jobId);
+                setPreviousViewMode('main');
+                setViewMode('report');
+              }}
+              initialSelectedPropertyId={selectedPropertyIdForView}
+            />
+          )}
+
+          {activeTab === 'jobs' && (
+            <JobsView
+              jobs={jobsList}
+              onOpenQuickJob={() => setIsQuickJobModalOpen(true)}
+              onOpenJobInspection={(jobId) => {
+                setActiveJobId(jobId);
+                setPreviousViewMode('main');
+                setViewMode('inspection');
+              }}
+              onOpenJobQuotation={(jobId) => {
+                setActiveJobId(jobId);
+                setPreviousViewMode('main');
+                setViewMode('report');
+              }}
+              onOpenJobReport={(jobId) => {
+                setActiveJobId(jobId);
+                setPreviousViewMode('main');
+                setViewMode('report');
+              }}
+              onUpdateJobStatus={(jobId, newStatus) => {
+                setJobsList((prev) =>
+                  prev.map((j) => (j.id === jobId ? { ...j, status: newStatus } : j))
+                );
+              }}
+            />
+          )}
+
+          {['money', 'documents', 'vendors', 'calendar', 'settings'].includes(activeTab) && (
+            <SecondaryViews
+              tab={activeTab}
+              jobs={jobsList}
+              onOpenJobReport={(jobId) => {
+                setActiveJobId(jobId);
+                setPreviousViewMode('main');
+                setViewMode('report');
+              }}
+              onOpenJobQuotation={(jobId) => {
+                setActiveJobId(jobId);
+                setPreviousViewMode('main');
+                setViewMode('report');
+              }}
+              onOpenBackupModal={() => setIsBackupModalOpen(true)}
+              onOpenGoogleDrive={() => setIsGoogleDriveModalOpen(true)}
+              onOpenDashboard={() => {
+                setPreviousViewMode('main');
+                setViewMode('dashboard');
+              }}
+              onOpenMollyExpress={() => setIsMollyExpressOpen(true)}
+            />
+          )}
+        </main>
+
+        <QuickJobModal
+          isOpen={isQuickJobModalOpen}
+          onClose={() => {
+            setIsQuickJobModalOpen(false);
+            setQuickJobPresetCustomer(null);
+            setQuickJobPresetProperty(null);
+          }}
+          customers={customers}
+          properties={properties}
+          onSaveJob={handleSaveQuickJob}
+          presetCustomerId={quickJobPresetCustomer}
+          presetPropertyId={quickJobPresetProperty}
+        />
+
+        {isMollyExpressOpen && (
+          <MollyExpressQuoteModal
+            isOpen={isMollyExpressOpen}
+            onClose={() => setIsMollyExpressOpen(false)}
+            onCreateJobAndOpenQuotation={handleCreateExpressQuoteJob}
+            existingJobsCount={jobsList.length}
+          />
+        )}
+
+        {isBackupModalOpen && (
+          <BackupRestoreModal
+            isOpen={isBackupModalOpen}
+            onClose={() => setIsBackupModalOpen(false)}
+            jobs={jobsList}
+            onRestoreJobs={handleRestoreJobs}
+            onForceSyncServer={handleForceSaveToServer}
+          />
+        )}
+
+        {isGoogleDriveModalOpen && (
+          <GoogleDriveModal
+            isOpen={isGoogleDriveModalOpen}
+            onClose={() => setIsGoogleDriveModalOpen(false)}
+            job={job}
+            onUpdateJobDriveUrl={(url) => {
+              updateCurrentJob((prev) => ({ ...prev, driveFolderUrl: url }));
+              setToastMessage({
+                title: 'ซิงค์ Google Drive สำเร็จ',
+                subtitle: 'บันทึกลิงก์โฟลเดอร์สำหรับงานตรวจนี้เรียบร้อยแล้ว',
+              });
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans pb-24 sm:pb-16 w-full max-w-full overflow-x-hidden">
       {/* Header */}
@@ -675,6 +1035,7 @@ export default function App() {
         job={job}
         totalJobsCount={jobsList.length}
         lastSyncStatus={lastSyncStatus}
+        onBackToMain={() => setViewMode('main')}
         onOpenMultiJob={() => setIsMultiJobModalOpen(true)}
         onOpenNewJob={() => setIsNewJobModalOpen(true)}
         onOpenDashboard={() => setViewMode('dashboard')}
@@ -981,15 +1342,23 @@ export default function App() {
       </main>
 
       {/* Floating Bottom Action Bar for Mobile View */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-2.5 sm:hidden shadow-lg z-20 flex gap-1.5">
+      <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-2 sm:hidden shadow-lg z-20 flex gap-1">
+        <button
+          onClick={() => setViewMode('main')}
+          className="flex-1 bg-[#0f1d33] text-sky-200 font-extrabold py-2 px-1 rounded-xl text-[10px] flex items-center justify-center gap-1 shadow-sm"
+          title="กลับหน้าหลัก My Day"
+        >
+          <span>← My Day</span>
+        </button>
+
         <button
           onClick={() => {
             setEditingItem(null);
             setIsFindingModalOpen(true);
           }}
-          className="flex-1 bg-[#102a4e] text-white font-bold py-2.5 px-2 rounded-xl text-xs flex items-center justify-center gap-1 shadow-sm"
+          className="flex-1 bg-[#102a4e] text-white font-bold py-2 px-1 rounded-xl text-[10px] flex items-center justify-center gap-1 shadow-sm"
         >
-          <Camera className="w-3.5 h-3.5 text-sky-300" />
+          <Camera className="w-3 h-3 text-sky-300" />
           <span>ถ่ายรูป</span>
         </button>
 

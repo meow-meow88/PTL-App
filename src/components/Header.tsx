@@ -9,6 +9,7 @@ interface HeaderProps {
   job: InspectionJob;
   totalJobsCount?: number;
   lastSyncStatus?: string;
+  onBackToMain?: () => void;
   onOpenMultiJob: () => void;
   onOpenNewJob: () => void;
   onOpenDashboard?: () => void;
@@ -24,6 +25,7 @@ export const Header: React.FC<HeaderProps> = ({
   job,
   totalJobsCount = 1,
   lastSyncStatus,
+  onBackToMain,
   onOpenMultiJob,
   onOpenNewJob,
   onOpenDashboard,
@@ -110,6 +112,16 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {onBackToMain && (
+              <button
+                onClick={onBackToMain}
+                className="flex items-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-500 text-white font-extrabold px-3.5 py-1.5 rounded-full shadow-md transition-all cursor-pointer ring-2 ring-blue-300/40"
+                title="กลับสู่หน้าหลัก PTL V2 (MY DAY / CUSTOMERS / JOBS)"
+              >
+                <span>← กลับหน้าหลัก (My Day)</span>
+              </button>
+            )}
+
             {onOpenMollyExpress && (
               <button
                 id="header-btn-molly-express"
