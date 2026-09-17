@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle2, DollarSign, Calendar, CreditCard, FileText } from 'lucide-react';
+import { X, CheckCircle2, DollarSign, Calendar, CreditCard, FileText, AlertCircle } from 'lucide-react';
 import { Invoice, PaymentMethod, Payment } from '../types';
 
 interface PaymentModalProps {
@@ -42,27 +42,30 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [reference, setReference] = useState('');
   const [notes, setNotes] = useState('');
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const targetInvoice = invoices.find((inv) => inv.id === selectedInvoiceId);
 
   useEffect(() => {
+    setValidationError(null);
     if (presetInvoiceId) {
       setSelectedInvoiceId(presetInvoiceId);
       const inv = invoices.find((i) => i.id === presetInvoiceId);
       if (inv) {
-        setAmount(String(inv.balanceDue > 0 ? inv.balanceDue : inv.total));
+        setAmount(String(inv.balanceDue > 0 ? inv.balanceDue : 0));
       }
     } else if (invoices.length > 0 && !selectedInvoiceId) {
       setSelectedInvoiceId(invoices[0].id);
-      setAmount(String(invoices[0].balanceDue > 0 ? invoices[0].balanceDue : invoices[0].total));
+      setAmount(String(invoices[0].balanceDue > 0 ? invoices[0].balanceDue : 0));
     }
   }, [presetInvoiceId, invoices]);
 
   const handleInvoiceChange = (invId: string) => {
     setSelectedInvoiceId(invId);
+    setValidationError(null);
     const inv = invoices.find((i) => i.id === invId);
     if (inv) {
-      setAmount(String(inv.balanceDue > 0 ? inv.balanceDue : inv.total));
+      setAmount(String(inv.balanceDue > 0 ? inv.balanceDue : 0));
     }
   };
 
@@ -70,29 +73,46 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setValidationError(null);
+
     if (!targetInvoice) {
-      alert('Please select a valid invoice');
+      setValidationError('Please select a valid invoice');
       return;
     }
 
-    const parsedAmount = parseFloat(amount) || 0;
-    if (parsedAmount <= 0) {
-      alert('Please enter a valid payment amount');
+    const parsedAmount = parseFloat(amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setValidationError('Payment amount must be greater than 0.');
       return;
     }
 
-    onRecordPayment({
-      invoiceId: targetInvoice.id,
-      jobId: targetInvoice.jobId,
-      customerId: targetInvoice.customerId,
-      amount: parsedAmount,
-      paymentMethod,
-      reference: reference.trim(),
-      notes: notes.trim(),
-      date,
-    });
+    if (targetInvoice.balanceDue <= 0) {
+      setValidationError('Payment cannot exceed the outstanding balance of ฿0.');
+      return;
+    }
 
-    onClose();
+    if (parsedAmount > targetInvoice.balanceDue) {
+      setValidationError(
+        `Payment cannot exceed the outstanding balance of ฿${targetInvoice.balanceDue.toLocaleString()}.`
+      );
+      return;
+    }
+
+    try {
+      onRecordPayment({
+        invoiceId: targetInvoice.id,
+        jobId: targetInvoice.jobId,
+        customerId: targetInvoice.customerId,
+        amount: parsedAmount,
+        paymentMethod,
+        reference: reference.trim(),
+        notes: notes.trim(),
+        date,
+      });
+      onClose();
+    } catch (err: any) {
+      setValidationError(err?.message || 'Failed to record payment.');
+    }
   };
 
   return (
@@ -182,11 +202,21 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               <input
                 type="number"
                 required
+                min="1"
+                step="any"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => {
+                  setAmount(e.target.value);
+                  setValidationError(null);
+                }}
                 placeholder="5000"
                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 font-extrabold focus:ring-2 focus:ring-emerald-500"
               />
+              {targetInvoice && (
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Max payable: ฿{targetInvoice.balanceDue.toLocaleString()}
+                </p>
+              )}
             </div>
 
             <div>
@@ -201,6 +231,14 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               />
             </div>
           </div>
+
+          {/* Validation Alert */}
+          {validationError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-rose-800 text-xs font-semibold animate-shake">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <span>{validationError}</span>
+            </div>
+          )}
 
           {/* Reference & Notes */}
           <div className="space-y-2">

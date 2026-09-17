@@ -73,11 +73,6 @@ import {
   createInvoiceFromJob,
   recordPayment,
 } from './utils/financeStorage';
-import {
-  initialExpensesSeed,
-  initialInvoicesSeed,
-  initialPaymentsSeed,
-} from './data/financeSeedData';
 import { Expense, Invoice, Payment } from './types';
 import {
   safeGetLocalStorage,
@@ -292,9 +287,9 @@ export default function App() {
             loadPayments(),
           ]);
           if (isMounted) {
-            setExpenses(loadedExpenses.length > 0 ? loadedExpenses : initialExpensesSeed);
-            setInvoices(loadedInvoices.length > 0 ? loadedInvoices : initialInvoicesSeed);
-            setPayments(loadedPayments.length > 0 ? loadedPayments : initialPaymentsSeed);
+            setExpenses(loadedExpenses);
+            setInvoices(loadedInvoices);
+            setPayments(loadedPayments);
           }
         } catch (finErr) {
           console.error('Finance load error:', finErr);
@@ -321,10 +316,10 @@ export default function App() {
   const [customers, setCustomers] = useState<Customer[]>(initialCustomersSeed);
   const [properties, setProperties] = useState<Property[]>(initialPropertiesSeed);
 
-  // Phase 2 Financial State
-  const [expenses, setExpenses] = useState<Expense[]>(initialExpensesSeed);
-  const [invoices, setInvoices] = useState<Invoice[]>(initialInvoicesSeed);
-  const [payments, setPayments] = useState<Payment[]>(initialPaymentsSeed);
+  // Phase 2 Financial State - Starts empty in production
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
 
   // Financial Modals State
   const [isJobFinancialModalOpen, setIsJobFinancialModalOpen] = useState(false);
@@ -417,24 +412,30 @@ export default function App() {
   };
 
   const handleRecordPayment = async (paymentData: Omit<Payment, 'id' | 'createdAt'>) => {
-    const result = recordPayment(paymentData, invoices, payments);
-    setInvoices(result.updatedInvoices);
-    setPayments(result.updatedPayments);
-    await saveInvoices(result.updatedInvoices);
-    await savePayments(result.updatedPayments);
+    try {
+      const result = recordPayment(paymentData, invoices, payments);
+      setInvoices(result.updatedInvoices);
+      setPayments(result.updatedPayments);
+      await saveInvoices(result.updatedInvoices);
+      await savePayments(result.updatedPayments);
 
-    // If fully paid, also update the job status to 'Paid'
-    const inv = result.updatedInvoices.find((i) => i.id === paymentData.invoiceId);
-    if (inv && inv.balanceDue <= 0 && inv.jobId) {
-      setJobsList((prev) =>
-        prev.map((j) => (j.id === inv.jobId ? { ...j, status: 'Paid' } : j))
-      );
+      // If fully paid, also update the job status to 'Paid'
+      const inv = result.updatedInvoices.find((i) => i.id === paymentData.invoiceId);
+      if (inv && inv.balanceDue <= 0 && inv.jobId) {
+        setJobsList((prev) =>
+          prev.map((j) => (j.id === inv.jobId ? { ...j, status: 'Paid' } : j))
+        );
+      }
+
+      setToastMessage({
+        title: 'Payment Recorded',
+        subtitle: `฿${paymentData.amount.toLocaleString()} via ${paymentData.paymentMethod}`,
+      });
+    } catch (err: any) {
+      console.error('Record payment error:', err);
+      alert(err?.message || 'Payment recording failed.');
+      throw err;
     }
-
-    setToastMessage({
-      title: 'Payment Recorded',
-      subtitle: `฿${paymentData.amount.toLocaleString()} via ${paymentData.paymentMethod}`,
-    });
   };
 
   const handleOpenFinancials = (jobId: string) => {
@@ -468,23 +469,23 @@ export default function App() {
     payments?: Payment[];
   }) => {
     handleRestoreJobs(payload.jobs, payload.activeJobId);
-    if (payload.customers && payload.customers.length > 0) {
+    if (Array.isArray(payload.customers)) {
       setCustomers(payload.customers);
       saveCustomers(payload.customers);
     }
-    if (payload.properties && payload.properties.length > 0) {
+    if (Array.isArray(payload.properties)) {
       setProperties(payload.properties);
       saveProperties(payload.properties);
     }
-    if (payload.expenses && payload.expenses.length > 0) {
+    if (Array.isArray(payload.expenses)) {
       setExpenses(payload.expenses);
       saveExpenses(payload.expenses);
     }
-    if (payload.invoices && payload.invoices.length > 0) {
+    if (Array.isArray(payload.invoices)) {
       setInvoices(payload.invoices);
       saveInvoices(payload.invoices);
     }
-    if (payload.payments && payload.payments.length > 0) {
+    if (Array.isArray(payload.payments)) {
       setPayments(payload.payments);
       savePayments(payload.payments);
     }

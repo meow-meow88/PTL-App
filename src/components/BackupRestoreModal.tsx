@@ -187,8 +187,17 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
 
         const hasFinancials =
           parsed &&
-          ((Array.isArray(parsed.expenses) && parsed.expenses.length > 0) ||
-            (Array.isArray(parsed.invoices) && parsed.invoices.length > 0));
+          (Array.isArray(parsed.expenses) ||
+            Array.isArray(parsed.invoices) ||
+            Array.isArray(parsed.payments));
+
+        const hasAnyCollections =
+          parsed &&
+          (Array.isArray(parsed.expenses) ||
+            Array.isArray(parsed.invoices) ||
+            Array.isArray(parsed.payments) ||
+            Array.isArray(parsed.customers) ||
+            Array.isArray(parsed.properties));
 
         if (
           confirm(
@@ -197,15 +206,15 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
             } ต้องการกู้คืนข้อมูลทันทีหรือไม่?`
           )
         ) {
-          if (onRestoreAllData && (parsed.expenses || parsed.invoices || parsed.customers)) {
+          if (onRestoreAllData && hasAnyCollections) {
             onRestoreAllData({
               jobs: importedJobs,
               activeJobId: importedActiveId,
-              customers: parsed.customers,
-              properties: parsed.properties,
-              expenses: parsed.expenses,
-              invoices: parsed.invoices,
-              payments: parsed.payments,
+              customers: Array.isArray(parsed.customers) ? parsed.customers : undefined,
+              properties: Array.isArray(parsed.properties) ? parsed.properties : undefined,
+              expenses: Array.isArray(parsed.expenses) ? parsed.expenses : undefined,
+              invoices: Array.isArray(parsed.invoices) ? parsed.invoices : undefined,
+              payments: Array.isArray(parsed.payments) ? parsed.payments : undefined,
             });
           } else {
             onRestoreJobs(importedJobs, importedActiveId);

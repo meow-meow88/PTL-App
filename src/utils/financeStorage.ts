@@ -7,18 +7,19 @@ const INVOICES_KEY = 'ptl_invoices_archive';
 const PAYMENTS_KEY = 'ptl_payments_archive';
 
 /**
- * Load Expenses with dual persistence (IndexedDB -> LocalStorage -> Seed)
+ * Load Expenses with dual persistence (IndexedDB -> LocalStorage -> empty array)
+ * Production-safe: Starts empty if no records are found.
  */
 export async function loadExpenses(): Promise<Expense[]> {
   try {
     const idbData = await idbGet<Expense[]>(EXPENSES_KEY);
-    if (Array.isArray(idbData) && idbData.length > 0) {
+    if (Array.isArray(idbData)) {
       return idbData;
     }
     const lsData = safeGetLocalStorage(EXPENSES_KEY);
     if (lsData) {
       const parsed = JSON.parse(lsData);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         idbSet(EXPENSES_KEY, parsed);
         return parsed;
       }
@@ -27,9 +28,7 @@ export async function loadExpenses(): Promise<Expense[]> {
     console.warn('[financeStorage] Error loading expenses:', err);
   }
 
-  // Fallback to initial seed
-  await saveExpenses(initialExpensesSeed);
-  return initialExpensesSeed;
+  return [];
 }
 
 export async function saveExpenses(expenses: Expense[]): Promise<void> {
@@ -44,17 +43,18 @@ export async function saveExpenses(expenses: Expense[]): Promise<void> {
 
 /**
  * Load Invoices with dual persistence
+ * Production-safe: Starts empty if no records are found.
  */
 export async function loadInvoices(): Promise<Invoice[]> {
   try {
     const idbData = await idbGet<Invoice[]>(INVOICES_KEY);
-    if (Array.isArray(idbData) && idbData.length > 0) {
+    if (Array.isArray(idbData)) {
       return idbData;
     }
     const lsData = safeGetLocalStorage(INVOICES_KEY);
     if (lsData) {
       const parsed = JSON.parse(lsData);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         idbSet(INVOICES_KEY, parsed);
         return parsed;
       }
@@ -63,8 +63,7 @@ export async function loadInvoices(): Promise<Invoice[]> {
     console.warn('[financeStorage] Error loading invoices:', err);
   }
 
-  await saveInvoices(initialInvoicesSeed);
-  return initialInvoicesSeed;
+  return [];
 }
 
 export async function saveInvoices(invoices: Invoice[]): Promise<void> {
@@ -79,17 +78,18 @@ export async function saveInvoices(invoices: Invoice[]): Promise<void> {
 
 /**
  * Load Payments with dual persistence
+ * Production-safe: Starts empty if no records are found.
  */
 export async function loadPayments(): Promise<Payment[]> {
   try {
     const idbData = await idbGet<Payment[]>(PAYMENTS_KEY);
-    if (Array.isArray(idbData) && idbData.length > 0) {
+    if (Array.isArray(idbData)) {
       return idbData;
     }
     const lsData = safeGetLocalStorage(PAYMENTS_KEY);
     if (lsData) {
       const parsed = JSON.parse(lsData);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         idbSet(PAYMENTS_KEY, parsed);
         return parsed;
       }
@@ -98,8 +98,7 @@ export async function loadPayments(): Promise<Payment[]> {
     console.warn('[financeStorage] Error loading payments:', err);
   }
 
-  await savePayments(initialPaymentsSeed);
-  return initialPaymentsSeed;
+  return [];
 }
 
 export async function savePayments(payments: Payment[]): Promise<void> {
@@ -241,6 +240,29 @@ export function recordPayment(
   invoices: Invoice[],
   payments: Payment[]
 ): { updatedInvoices: Invoice[]; updatedPayments: Payment[]; newPayment: Payment } {
+  // 1. Business Logic Validation
+  const targetInvoice = invoices.find((inv) => inv.id === params.invoiceId);
+  if (!targetInvoice) {
+    throw new Error('Invoice not found.');
+  }
+
+  const rawAmount = params.amount;
+  if (typeof rawAmount !== 'number' || isNaN(rawAmount) || rawAmount <= 0) {
+    throw new Error('Payment amount must be greater than 0.');
+  }
+
+  // Calculate current paid amount for this invoice from existing payments
+  const currentPaid = payments
+    .filter((p) => p.invoiceId === targetInvoice.id)
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
+  const currentBalanceDue = Math.max(0, targetInvoice.total - currentPaid);
+
+  if (rawAmount > currentBalanceDue) {
+    throw new Error(
+      `Payment cannot exceed the outstanding balance of ฿${currentBalanceDue.toLocaleString()}.`
+    );
+  }
+
   const paymentDate = params.date || new Date().toISOString().slice(0, 10);
   const newPayment: Payment = {
     id: `PAY-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
@@ -248,7 +270,7 @@ export function recordPayment(
     jobId: params.jobId,
     customerId: params.customerId,
     date: paymentDate,
-    amount: params.amount,
+    amount: rawAmount,
     paymentMethod: params.paymentMethod,
     reference: params.reference?.trim() || '',
     notes: params.notes?.trim() || '',
