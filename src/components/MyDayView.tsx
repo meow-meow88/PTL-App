@@ -15,18 +15,23 @@ import {
   FileText,
   MapPin,
   Sparkles,
+  CreditCard,
+  Receipt,
+  DollarSign,
 } from 'lucide-react';
-import { InspectionJob, Customer, Property } from '../types';
+import { InspectionJob, Customer, Property, Invoice } from '../types';
 
 interface MyDayViewProps {
   jobs: InspectionJob[];
   customers: Customer[];
   properties: Property[];
+  invoices?: Invoice[];
   onOpenJobInspection: (jobId: string) => void;
   onOpenJobQuotation: (jobId: string) => void;
   onOpenQuickJob: () => void;
   onSelectCustomer: (customerId: string) => void;
   onSelectProperty: (propertyId: string) => void;
+  onSelectInvoice?: (invoiceId: string) => void;
   onUpdateJobStatus?: (jobId: string, status: InspectionJob['status']) => void;
 }
 
@@ -34,11 +39,13 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
   jobs,
   customers,
   properties,
+  invoices = [],
   onOpenJobInspection,
   onOpenJobQuotation,
   onOpenQuickJob,
   onSelectCustomer,
   onSelectProperty,
+  onSelectInvoice,
   onUpdateJobStatus,
 }) => {
   const [todayFilter, setTodayFilter] = useState<'all' | 'jobs' | 'appointments' | 'followups' | 'waiting_customer' | 'waiting_vendor'>('all');
@@ -61,6 +68,23 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
   const unfinishedJobs = jobs.filter((j) => j.status === 'Inspection' || (j.status !== 'Completed' && j.items && j.items.length > 0));
   const followUpItems = customers.filter((c) => Boolean(c.nextFollowUp) || Boolean(c.followUpNote));
   const inspectionDueSoon = properties.filter((p) => Boolean(p.nextInspection));
+
+  // FINANCIAL ALERTS: Overdue invoices & un-invoiced completed jobs
+  const now = new Date();
+  const overdueInvoices = invoices.filter((inv) => {
+    if (inv.balanceDue <= 0 || inv.status === 'Paid' || inv.status === 'Cancelled') return false;
+    if (inv.status === 'Overdue') return true;
+    if (inv.dueDate) {
+      return new Date(inv.dueDate) < now;
+    }
+    return false;
+  });
+
+  const uninvoicedCompletedJobs = jobs.filter(
+    (j) => j.status === 'Completed' && !invoices.some((inv) => inv.jobId === j.id)
+  );
+
+  const totalOverdueAmount = overdueInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
 
   // PROPERTY
   const upcomingInspections = properties.filter((p) => Boolean(p.nextInspection));
@@ -313,12 +337,100 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
             </div>
           </div>
           <span className="text-xs font-black px-2.5 py-1 bg-amber-100 text-amber-900 rounded-full border border-amber-200">
-            {waitingCustomerJobs.length + unfinishedJobs.length + followUpItems.length} items
+            {waitingCustomerJobs.length +
+              unfinishedJobs.length +
+              followUpItems.length +
+              overdueInvoices.length +
+              uninvoicedCompletedJobs.length}{' '}
+            items
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          {/* 1. Upcoming jobs */}
+        {/* OVERDUE MONEY BANNER IF APPLICABLE */}
+        {overdueInvoices.length > 0 && (
+          <div className="mb-4 p-3 bg-rose-50 border border-rose-300 rounded-xl flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="p-1 bg-rose-200 text-rose-800 rounded-lg">
+                <AlertTriangle className="w-4 h-4 text-rose-700" />
+              </span>
+              <div>
+                <span className="text-xs font-black text-rose-900 uppercase">
+                  Cash Flow Alert: {overdueInvoices.length} Overdue Invoice(s)
+                </span>
+                <p className="text-[11px] text-rose-700">
+                  ฿{totalOverdueAmount.toLocaleString()} is waiting for collection. Send client reminders today.
+                </p>
+              </div>
+            </div>
+            {onSelectInvoice && (
+              <button
+                onClick={() => onSelectInvoice(overdueInvoices[0].id)}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-lg shadow-2xs transition-colors cursor-pointer shrink-0"
+              >
+                View Invoice
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+          {/* 1. Overdue Invoices (FINANCIAL ALERT) */}
+          <div className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/40 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between gap-1 mb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-rose-800 bg-rose-200/80 px-2 py-0.5 rounded">
+                  Overdue Invoices
+                </span>
+                <span className="text-xs font-bold text-rose-700">{overdueInvoices.length}</span>
+              </div>
+              <div className="space-y-2">
+                {overdueInvoices.slice(0, 2).map((inv) => (
+                  <div
+                    key={inv.id}
+                    onClick={() => onSelectInvoice && onSelectInvoice(inv.id)}
+                    className="p-2 bg-white rounded-lg border border-rose-200 text-xs hover:border-rose-400 cursor-pointer"
+                  >
+                    <div className="font-bold text-rose-900 truncate font-mono">{inv.invoiceNumber}</div>
+                    <div className="text-[10px] text-slate-500">
+                      Due: ฿{inv.balanceDue.toLocaleString()} (Due: {inv.dueDate})
+                    </div>
+                  </div>
+                ))}
+                {overdueInvoices.length === 0 && (
+                  <div className="text-[11px] text-slate-400 py-2">No overdue invoices.</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Uninvoiced Completed Jobs (FINANCIAL ALERT) */}
+          <div className="p-3.5 rounded-xl border border-purple-200 bg-purple-50/40 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between gap-1 mb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-purple-800 bg-purple-200/80 px-2 py-0.5 rounded">
+                  Need Invoice
+                </span>
+                <span className="text-xs font-bold text-purple-700">{uninvoicedCompletedJobs.length}</span>
+              </div>
+              <div className="space-y-2">
+                {uninvoicedCompletedJobs.slice(0, 2).map((j) => (
+                  <div
+                    key={j.id}
+                    onClick={() => onOpenJobQuotation(j.id)}
+                    className="p-2 bg-white rounded-lg border border-purple-200 text-xs hover:border-purple-400 cursor-pointer"
+                  >
+                    <div className="font-bold text-purple-900 truncate">{j.villaName}</div>
+                    <div className="text-[10px] text-slate-500">Job completed • Click to invoice</div>
+                  </div>
+                ))}
+                {uninvoicedCompletedJobs.length === 0 && (
+                  <div className="text-[11px] text-slate-400 py-2">All completed jobs invoiced.</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Upcoming jobs */}
           <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/60 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between gap-1 mb-2">
@@ -345,7 +457,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
             </div>
           </div>
 
-          {/* 2. Unfinished jobs */}
+          {/* 4. Unfinished jobs */}
           <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/60 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between gap-1 mb-2">
@@ -372,7 +484,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
             </div>
           </div>
 
-          {/* 3. Follow-up items */}
+          {/* 5. Follow-up items */}
           <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/60 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between gap-1 mb-2">
@@ -399,7 +511,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
             </div>
           </div>
 
-          {/* 4. Inspection due soon */}
+          {/* 6. Inspection due soon */}
           <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/60 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between gap-1 mb-2">

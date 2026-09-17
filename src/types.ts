@@ -1,6 +1,61 @@
 export type CustomerGroup = 'expat' | 'villa_owner' | 'rental_investor';
 
-export type JobStatus = 'Inspection' | 'Quoted' | 'Paid' | 'Completed';
+// PTL V2 Extended Job Status Lifecycle (with backward compatibility)
+export type JobStatus =
+  | 'New'
+  | 'Quoted'
+  | 'Approved'
+  | 'Scheduled'
+  | 'In Progress'
+  | 'Waiting Customer'
+  | 'Waiting Vendor'
+  | 'Completed'
+  | 'Invoiced'
+  | 'Partially Paid'
+  | 'Paid'
+  | 'Cancelled'
+  // Backward compatibility aliases:
+  | 'Inspection';
+
+export function normalizeJobStatus(status?: string): JobStatus {
+  if (!status) return 'New';
+  const clean = status.trim();
+  switch (clean.toLowerCase()) {
+    case 'inspection':
+      return 'Inspection';
+    case 'quoted':
+      return 'Quoted';
+    case 'approved':
+      return 'Approved';
+    case 'scheduled':
+      return 'Scheduled';
+    case 'in progress':
+    case 'in_progress':
+      return 'In Progress';
+    case 'waiting customer':
+    case 'waiting_customer':
+      return 'Waiting Customer';
+    case 'waiting vendor':
+    case 'waiting_vendor':
+      return 'Waiting Vendor';
+    case 'completed':
+      return 'Completed';
+    case 'invoiced':
+      return 'Invoiced';
+    case 'partially paid':
+    case 'partially_paid':
+      return 'Partially Paid';
+    case 'paid':
+      return 'Paid';
+    case 'cancelled':
+    case 'canceled':
+      return 'Cancelled';
+    case 'new':
+      return 'New';
+    default:
+      return (clean as JobStatus) || 'New';
+  }
+}
 
 // PTL V2 Solo Operator Navigation Tabs
 export type MainNavTab =
@@ -190,6 +245,175 @@ export interface InspectionJob {
   waitingOn?: 'customer' | 'vendor' | 'parts' | 'payment' | 'none';
   actionRequired?: string; // e.g. "Invoice needs follow-up", "Confirm appointment tomorrow"
   completedAt?: string;
+}
+
+// ====================================================
+// PHASE 2: FINANCIAL MODELS & CALCULATIONS
+// ====================================================
+
+export type ExpenseCategory =
+  | 'Materials'
+  | 'Equipment'
+  | 'Fuel'
+  | 'Travel'
+  | 'Vendor'
+  | 'Helper'
+  | 'Parking'
+  | 'Other';
+
+export interface Expense {
+  id: string; // e.g. EXP-202609-001
+  jobId: string; // Linked to InspectionJob.id
+  date: string; // YYYY-MM-DD
+  category: ExpenseCategory;
+  description: string;
+  amount: number;
+  vendorId?: string; // Optional vendor link
+  vendorName?: string; // Optional vendor/supplier name
+  receiptImage?: string; // Base64 or image URL
+  notes?: string;
+  createdAt: string;
+}
+
+export type InvoiceStatus =
+  | 'Draft'
+  | 'Sent'
+  | 'Partially Paid'
+  | 'Paid'
+  | 'Overdue'
+  | 'Cancelled';
+
+export interface InvoiceItem {
+  id?: string;
+  item?: number;
+  description: string;
+  detail?: string;
+  qty: string | number;
+  unitPrice?: number;
+  amount: number;
+  categoryType?: 'Hardware' | 'Service' | 'Fee';
+}
+
+export interface Invoice {
+  id: string; // e.g. INV-202609-001
+  invoiceNumber: string; // e.g. PTL-INV-2026-001
+  jobId: string; // Linked to InspectionJob.id
+  customerId: string; // Linked to Customer.id
+  propertyId?: string; // Linked to Property.id
+  issueDate: string; // YYYY-MM-DD
+  dueDate: string; // YYYY-MM-DD
+  status: InvoiceStatus;
+  items: InvoiceItem[];
+  subtotal: number;
+  discount: number;
+  tax: number;
+  total: number;
+  amountPaid: number;
+  balanceDue: number;
+  notes?: string;
+  createdAt: string;
+}
+
+export type PaymentMethod =
+  | 'Cash'
+  | 'Bank Transfer'
+  | 'PromptPay'
+  | 'Credit Card'
+  | 'Other';
+
+export interface Payment {
+  id: string; // e.g. PAY-202609-001
+  invoiceId: string; // Linked to Invoice.id
+  jobId: string; // Linked to InspectionJob.id
+  customerId: string; // Linked to Customer.id
+  date: string; // YYYY-MM-DD
+  amount: number;
+  paymentMethod: PaymentMethod;
+  reference?: string; // Transfer slip / check / transaction ref
+  notes?: string;
+  createdAt: string;
+}
+
+export interface JobFinancials {
+  customerPrice: number;
+  materialCost: number;
+  travelCost: number;
+  vendorCost: number;
+  helperCost: number;
+  otherCost: number;
+  totalCost: number;
+  netProfit: number;
+  profitMargin: number; // Percentage (e.g. 45.0 for 45%)
+}
+
+/**
+ * Derives clean financial metrics from job price/quote and linked expenses.
+ * Safe against zero/negative customer prices.
+ */
+export function calculateJobFinancials(
+  job: InspectionJob,
+  jobExpenses: Expense[]
+): JobFinancials {
+  // 1. Determine Customer Price
+  let customerPrice = typeof job.price === 'number' && job.price > 0 ? job.price : 0;
+  if (customerPrice === 0 && job.quotation) {
+    const hwTotal =
+      job.quotation.hardwareItems?.reduce((sum, h) => sum + (h.amount || 0), 0) || 0;
+    const svTotal =
+      job.quotation.serviceItems?.reduce((sum, s) => sum + (s.amount || 0), 0) || 0;
+    const feeRate = job.quotation.procurementFeeRate ?? 0.15;
+    const fee = hwTotal * feeRate;
+    customerPrice = hwTotal + fee + svTotal;
+  }
+
+  // 2. Sum Expenses by Category
+  let materialCost = 0;
+  let travelCost = 0;
+  let vendorCost = 0;
+  let helperCost = 0;
+  let otherCost = 0;
+
+  for (const exp of jobExpenses) {
+    const amt = exp.amount || 0;
+    switch (exp.category) {
+      case 'Materials':
+      case 'Equipment':
+        materialCost += amt;
+        break;
+      case 'Fuel':
+      case 'Travel':
+      case 'Parking':
+        travelCost += amt;
+        break;
+      case 'Vendor':
+        vendorCost += amt;
+        break;
+      case 'Helper':
+        helperCost += amt;
+        break;
+      case 'Other':
+      default:
+        otherCost += amt;
+        break;
+    }
+  }
+
+  const totalCost = materialCost + travelCost + vendorCost + helperCost + otherCost;
+  const netProfit = customerPrice - totalCost;
+  const profitMargin =
+    customerPrice > 0 ? Math.round((netProfit / customerPrice) * 10000) / 100 : 0;
+
+  return {
+    customerPrice,
+    materialCost,
+    travelCost,
+    vendorCost,
+    helperCost,
+    otherCost,
+    totalCost,
+    netProfit,
+    profitMargin,
+  };
 }
 
 // ----------------------------------------------------

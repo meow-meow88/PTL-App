@@ -50,6 +50,11 @@ import { PropertiesView } from './components/PropertiesView';
 import { JobsView } from './components/JobsView';
 import { QuickJobModal } from './components/QuickJobModal';
 import { SecondaryViews } from './components/SecondaryViews';
+import { MoneyView } from './components/MoneyView';
+import { JobFinancialModal } from './components/JobFinancialModal';
+import { ExpenseModal } from './components/ExpenseModal';
+import { InvoiceModal } from './components/InvoiceModal';
+import { PaymentModal } from './components/PaymentModal';
 import {
   loadCustomers,
   saveCustomers,
@@ -58,6 +63,22 @@ import {
   ensureCustomerAndPropertyForJob,
 } from './utils/crmStorage';
 import { initialCustomersSeed, initialPropertiesSeed } from './data/crmSeedData';
+import {
+  loadExpenses,
+  saveExpenses,
+  loadInvoices,
+  saveInvoices,
+  loadPayments,
+  savePayments,
+  createInvoiceFromJob,
+  recordPayment,
+} from './utils/financeStorage';
+import {
+  initialExpensesSeed,
+  initialInvoicesSeed,
+  initialPaymentsSeed,
+} from './data/financeSeedData';
+import { Expense, Invoice, Payment } from './types';
 import {
   safeGetLocalStorage,
   safeSetLocalStorage,
@@ -262,6 +283,22 @@ export default function App() {
         } catch (crmErr) {
           console.error('CRM load error:', crmErr);
         }
+
+        // 5. Hydrate Phase 2 Financials (Expenses, Invoices, Payments)
+        try {
+          const [loadedExpenses, loadedInvoices, loadedPayments] = await Promise.all([
+            loadExpenses(),
+            loadInvoices(),
+            loadPayments(),
+          ]);
+          if (isMounted) {
+            setExpenses(loadedExpenses.length > 0 ? loadedExpenses : initialExpensesSeed);
+            setInvoices(loadedInvoices.length > 0 ? loadedInvoices : initialInvoicesSeed);
+            setPayments(loadedPayments.length > 0 ? loadedPayments : initialPaymentsSeed);
+          }
+        } catch (finErr) {
+          console.error('Finance load error:', finErr);
+        }
       } catch (err) {
         console.error('Durable hydration error:', err);
       } finally {
@@ -283,6 +320,26 @@ export default function App() {
   const [previousViewMode, setPreviousViewMode] = useState<'main' | 'inspection'>('main');
   const [customers, setCustomers] = useState<Customer[]>(initialCustomersSeed);
   const [properties, setProperties] = useState<Property[]>(initialPropertiesSeed);
+
+  // Phase 2 Financial State
+  const [expenses, setExpenses] = useState<Expense[]>(initialExpensesSeed);
+  const [invoices, setInvoices] = useState<Invoice[]>(initialInvoicesSeed);
+  const [payments, setPayments] = useState<Payment[]>(initialPaymentsSeed);
+
+  // Financial Modals State
+  const [isJobFinancialModalOpen, setIsJobFinancialModalOpen] = useState(false);
+  const [selectedJobIdForFinancials, setSelectedJobIdForFinancials] = useState<string | null>(null);
+
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [expenseModalPresetJobId, setExpenseModalPresetJobId] = useState<string | undefined>(undefined);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [selectedInvoiceIdForPayment, setSelectedInvoiceIdForPayment] = useState<string | null>(null);
+
   const [isQuickJobModalOpen, setIsQuickJobModalOpen] = useState(false);
   const [quickJobPresetCustomer, setQuickJobPresetCustomer] = useState<string | null>(null);
   const [quickJobPresetProperty, setQuickJobPresetProperty] = useState<string | null>(null);
@@ -300,6 +357,142 @@ export default function App() {
   const [isMobileGuideOpen, setIsMobileGuideOpen] = useState(false);
   const [isGoogleDriveModalOpen, setIsGoogleDriveModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ title: string; subtitle?: string } | null>(null);
+
+  // Financial Handlers
+  const handleSaveExpense = async (expense: Expense) => {
+    setExpenses((prev) => {
+      const exists = prev.some((e) => e.id === expense.id);
+      const next = exists ? prev.map((e) => (e.id === expense.id ? expense : e)) : [expense, ...prev];
+      saveExpenses(next);
+      return next;
+    });
+    setToastMessage({
+      title: 'Expense Recorded',
+      subtitle: `${expense.category} - ฿${expense.amount.toLocaleString()} (${expense.vendorName || 'Cost'})`,
+    });
+  };
+
+  const handleDeleteExpense = async (expenseId: string) => {
+    setExpenses((prev) => {
+      const next = prev.filter((e) => e.id !== expenseId);
+      saveExpenses(next);
+      return next;
+    });
+    setToastMessage({
+      title: 'Expense Removed',
+      subtitle: 'Cost item deleted from job ledger',
+    });
+  };
+
+  const handleCreateInvoiceForJob = (targetJob: InspectionJob) => {
+    const existingInv = invoices.find((i) => i.jobId === targetJob.id);
+    if (existingInv) {
+      setSelectedInvoiceId(existingInv.id);
+      setIsInvoiceModalOpen(true);
+      setToastMessage({
+        title: 'Invoice Exists',
+        subtitle: `Opened existing ${existingInv.invoiceNumber}`,
+      });
+      return;
+    }
+
+    const newInvoice = createInvoiceFromJob(targetJob, invoices);
+    const updatedInvoices = [newInvoice, ...invoices];
+    setInvoices(updatedInvoices);
+    saveInvoices(updatedInvoices);
+
+    // Transition job status to Invoiced if currently completed or below
+    if (targetJob.status !== 'Paid') {
+      setJobsList((prev) =>
+        prev.map((j) => (j.id === targetJob.id ? { ...j, status: 'Invoiced' } : j))
+      );
+    }
+
+    setSelectedInvoiceId(newInvoice.id);
+    setIsInvoiceModalOpen(true);
+    setToastMessage({
+      title: 'Invoice Created',
+      subtitle: `${newInvoice.invoiceNumber} generated for ฿${newInvoice.total.toLocaleString()}`,
+    });
+  };
+
+  const handleRecordPayment = async (paymentData: Omit<Payment, 'id' | 'createdAt'>) => {
+    const result = recordPayment(paymentData, invoices, payments);
+    setInvoices(result.updatedInvoices);
+    setPayments(result.updatedPayments);
+    await saveInvoices(result.updatedInvoices);
+    await savePayments(result.updatedPayments);
+
+    // If fully paid, also update the job status to 'Paid'
+    const inv = result.updatedInvoices.find((i) => i.id === paymentData.invoiceId);
+    if (inv && inv.balanceDue <= 0 && inv.jobId) {
+      setJobsList((prev) =>
+        prev.map((j) => (j.id === inv.jobId ? { ...j, status: 'Paid' } : j))
+      );
+    }
+
+    setToastMessage({
+      title: 'Payment Recorded',
+      subtitle: `฿${paymentData.amount.toLocaleString()} via ${paymentData.paymentMethod}`,
+    });
+  };
+
+  const handleOpenFinancials = (jobId: string) => {
+    setSelectedJobIdForFinancials(jobId);
+    setIsJobFinancialModalOpen(true);
+  };
+
+  const handleOpenAddExpense = (jobId?: string) => {
+    setExpenseModalPresetJobId(jobId);
+    setEditingExpense(null);
+    setIsExpenseModalOpen(true);
+  };
+
+  const handleOpenInvoice = (invoiceId: string) => {
+    setSelectedInvoiceId(invoiceId);
+    setIsInvoiceModalOpen(true);
+  };
+
+  const handleOpenRecordPayment = (invoiceId: string) => {
+    setSelectedInvoiceIdForPayment(invoiceId);
+    setIsPaymentModalOpen(true);
+  };
+
+  const handleRestoreAllData = async (payload: {
+    jobs: InspectionJob[];
+    activeJobId?: string;
+    customers?: Customer[];
+    properties?: Property[];
+    expenses?: Expense[];
+    invoices?: Invoice[];
+    payments?: Payment[];
+  }) => {
+    handleRestoreJobs(payload.jobs, payload.activeJobId);
+    if (payload.customers && payload.customers.length > 0) {
+      setCustomers(payload.customers);
+      saveCustomers(payload.customers);
+    }
+    if (payload.properties && payload.properties.length > 0) {
+      setProperties(payload.properties);
+      saveProperties(payload.properties);
+    }
+    if (payload.expenses && payload.expenses.length > 0) {
+      setExpenses(payload.expenses);
+      saveExpenses(payload.expenses);
+    }
+    if (payload.invoices && payload.invoices.length > 0) {
+      setInvoices(payload.invoices);
+      saveInvoices(payload.invoices);
+    }
+    if (payload.payments && payload.payments.length > 0) {
+      setPayments(payload.payments);
+      savePayments(payload.payments);
+    }
+    setToastMessage({
+      title: 'Full Backup Restored',
+      subtitle: `Restored ${payload.jobs.length} jobs, CRM & Financial ledgers`,
+    });
+  };
 
   const handleSaveCustomer = async (updatedCustomer: Customer) => {
     setCustomers((prev) => {
@@ -849,6 +1042,7 @@ export default function App() {
               jobs={jobsList}
               customers={customers}
               properties={properties}
+              invoices={invoices}
               onOpenJobInspection={(jobId) => {
                 setActiveJobId(jobId);
                 setPreviousViewMode('main');
@@ -868,6 +1062,7 @@ export default function App() {
                 setSelectedPropertyIdForView(propId);
                 setActiveTab('properties');
               }}
+              onSelectInvoice={handleOpenInvoice}
               onUpdateJobStatus={(jobId, newStatus) => {
                 setJobsList((prev) =>
                   prev.map((j) => (j.id === jobId ? { ...j, status: newStatus } : j))
@@ -928,6 +1123,9 @@ export default function App() {
           {activeTab === 'jobs' && (
             <JobsView
               jobs={jobsList}
+              expenses={expenses}
+              invoices={invoices}
+              payments={payments}
               onOpenQuickJob={() => setIsQuickJobModalOpen(true)}
               onOpenJobInspection={(jobId) => {
                 setActiveJobId(jobId);
@@ -949,10 +1147,32 @@ export default function App() {
                   prev.map((j) => (j.id === jobId ? { ...j, status: newStatus } : j))
                 );
               }}
+              onOpenFinancials={handleOpenFinancials}
+              onOpenAddExpense={handleOpenAddExpense}
+              onCreateInvoice={handleCreateInvoiceForJob}
             />
           )}
 
-          {['money', 'documents', 'vendors', 'calendar', 'settings'].includes(activeTab) && (
+          {activeTab === 'money' && (
+            <MoneyView
+              jobs={jobsList}
+              expenses={expenses}
+              invoices={invoices}
+              payments={payments}
+              onOpenFinancials={handleOpenFinancials}
+              onOpenAddExpense={handleOpenAddExpense}
+              onOpenInvoice={handleOpenInvoice}
+              onOpenRecordPayment={handleOpenRecordPayment}
+              onCreateInvoiceForJob={handleCreateInvoiceForJob}
+              onOpenJobReport={(jobId) => {
+                setActiveJobId(jobId);
+                setPreviousViewMode('main');
+                setViewMode('report');
+              }}
+            />
+          )}
+
+          {['documents', 'vendors', 'calendar', 'settings'].includes(activeTab) && (
             <SecondaryViews
               tab={activeTab}
               jobs={jobsList}
@@ -991,6 +1211,69 @@ export default function App() {
           presetPropertyId={quickJobPresetProperty}
         />
 
+        {/* Phase 2 Financial Modals */}
+        {isJobFinancialModalOpen && selectedJobIdForFinancials && (
+          <JobFinancialModal
+            isOpen={isJobFinancialModalOpen}
+            onClose={() => {
+              setIsJobFinancialModalOpen(false);
+              setSelectedJobIdForFinancials(null);
+            }}
+            job={jobsList.find((j) => j.id === selectedJobIdForFinancials) || jobsList[0]}
+            expenses={expenses}
+            invoices={invoices}
+            payments={payments}
+            onOpenAddExpense={handleOpenAddExpense}
+            onCreateInvoice={handleCreateInvoiceForJob}
+            onOpenInvoice={handleOpenInvoice}
+            onDeleteExpense={handleDeleteExpense}
+          />
+        )}
+
+        {isExpenseModalOpen && (
+          <ExpenseModal
+            isOpen={isExpenseModalOpen}
+            onClose={() => {
+              setIsExpenseModalOpen(false);
+              setEditingExpense(null);
+              setExpenseModalPresetJobId(undefined);
+            }}
+            jobs={jobsList}
+            onSaveExpense={handleSaveExpense}
+            presetJobId={expenseModalPresetJobId}
+            editingExpense={editingExpense}
+          />
+        )}
+
+        {isInvoiceModalOpen && selectedInvoiceId && (
+          <InvoiceModal
+            isOpen={isInvoiceModalOpen}
+            onClose={() => {
+              setIsInvoiceModalOpen(false);
+              setSelectedInvoiceId(null);
+            }}
+            invoice={invoices.find((i) => i.id === selectedInvoiceId) || null}
+            job={jobsList.find((j) => j.id === invoices.find((i) => i.id === selectedInvoiceId)?.jobId)}
+            customer={customers.find((c) => c.id === invoices.find((i) => i.id === selectedInvoiceId)?.customerId)}
+            property={properties.find((p) => p.id === invoices.find((i) => i.id === selectedInvoiceId)?.propertyId)}
+            payments={payments}
+            onOpenRecordPayment={handleOpenRecordPayment}
+          />
+        )}
+
+        {isPaymentModalOpen && (
+          <PaymentModal
+            isOpen={isPaymentModalOpen}
+            onClose={() => {
+              setIsPaymentModalOpen(false);
+              setSelectedInvoiceIdForPayment(null);
+            }}
+            invoices={invoices}
+            onRecordPayment={handleRecordPayment}
+            presetInvoiceId={selectedInvoiceIdForPayment || undefined}
+          />
+        )}
+
         {isMollyExpressOpen && (
           <MollyExpressQuoteModal
             isOpen={isMollyExpressOpen}
@@ -1002,11 +1285,17 @@ export default function App() {
 
         {isBackupModalOpen && (
           <BackupRestoreModal
-            isOpen={isBackupModalOpen}
-            onClose={() => setIsBackupModalOpen(false)}
             jobs={jobsList}
+            activeJobId={activeJobId}
+            customers={customers}
+            properties={properties}
+            expenses={expenses}
+            invoices={invoices}
+            payments={payments}
             onRestoreJobs={handleRestoreJobs}
-            onForceSyncServer={handleForceSaveToServer}
+            onRestoreAllData={handleRestoreAllData}
+            onForceSaveToServer={handleForceSaveToServer}
+            onClose={() => setIsBackupModalOpen(false)}
           />
         )}
 
@@ -1508,7 +1797,13 @@ export default function App() {
         <BackupRestoreModal
           jobs={jobsList}
           activeJobId={activeJobId}
+          customers={customers}
+          properties={properties}
+          expenses={expenses}
+          invoices={invoices}
+          payments={payments}
           onRestoreJobs={handleRestoreJobs}
+          onRestoreAllData={handleRestoreAllData}
           onForceSaveToServer={handleForceSaveToServer}
           onClose={() => setIsBackupModalOpen(false)}
         />

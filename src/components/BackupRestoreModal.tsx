@@ -15,8 +15,16 @@ import {
   RefreshCw,
   Smartphone,
   Server,
+  DollarSign,
 } from 'lucide-react';
-import { InspectionJob } from '../types';
+import {
+  InspectionJob,
+  Customer,
+  Property,
+  Expense,
+  Invoice,
+  Payment,
+} from '../types';
 import { getLocalSnapshots, LocalSnapshot, restoreLocalSnapshot } from '../utils/storage';
 
 interface ServerBackup {
@@ -31,7 +39,21 @@ interface ServerBackup {
 interface BackupRestoreModalProps {
   jobs: InspectionJob[];
   activeJobId: string;
+  customers?: Customer[];
+  properties?: Property[];
+  expenses?: Expense[];
+  invoices?: Invoice[];
+  payments?: Payment[];
   onRestoreJobs: (jobs: InspectionJob[], activeJobId?: string) => void;
+  onRestoreAllData?: (payload: {
+    jobs: InspectionJob[];
+    activeJobId?: string;
+    customers?: Customer[];
+    properties?: Property[];
+    expenses?: Expense[];
+    invoices?: Invoice[];
+    payments?: Payment[];
+  }) => void;
   onForceSaveToServer: () => Promise<boolean>;
   onClose: () => void;
 }
@@ -39,7 +61,13 @@ interface BackupRestoreModalProps {
 export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
   jobs,
   activeJobId,
+  customers = [],
+  properties = [],
+  expenses = [],
+  invoices = [],
+  payments = [],
   onRestoreJobs,
+  onRestoreAllData,
   onForceSaveToServer,
   onClose,
 }) => {
@@ -99,13 +127,19 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
     }
   };
 
-  // Export current jobs as a downloadable JSON file
+  // Export current jobs + financials as a downloadable JSON file
   const handleExportJson = () => {
     try {
       const exportData = {
+        version: '2.0.0-phase2',
         exportedAt: new Date().toISOString(),
         activeJobId,
         jobs,
+        customers,
+        properties,
+        expenses,
+        invoices,
+        payments,
       };
       const blob = new Blob([JSON.stringify(exportData, null, 2)], {
         type: 'application/json',
@@ -114,12 +148,12 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
       const a = document.createElement('a');
       const dateStr = new Date().toISOString().slice(0, 10);
       a.href = url;
-      a.download = `PTL_Jobs_Backup_${dateStr}_${Date.now()}.json`;
+      a.download = `PTL_Full_Backup_${dateStr}_${Date.now()}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      setFeedbackMessage('ดาวน์โหลดไฟล์สำรองข้อมูล JSON ลงเครื่องเรียบร้อยแล้ว');
+      setFeedbackMessage('ดาวน์โหลดไฟล์สำรองข้อมูล JSON (รวมระบบการเงินและลูกค้า) เรียบร้อยแล้ว');
     } catch (err) {
       console.error(err);
       alert('เกิดข้อผิดพลาดในการส่งออกข้อมูล');
@@ -151,9 +185,32 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
           return;
         }
 
-        if (confirm(`พบข้อมูลงานวิลล่าจำนวน ${importedJobs.length} หลัง ต้องการกู้คืนข้อมูลทันทีหรือไม่?`)) {
-          onRestoreJobs(importedJobs, importedActiveId);
-          setFeedbackMessage(`กู้คืนข้อมูลงาน ${importedJobs.length} หลังสำเร็จเรียบร้อย!`);
+        const hasFinancials =
+          parsed &&
+          ((Array.isArray(parsed.expenses) && parsed.expenses.length > 0) ||
+            (Array.isArray(parsed.invoices) && parsed.invoices.length > 0));
+
+        if (
+          confirm(
+            `พบข้อมูลงานวิลล่าจำนวน ${importedJobs.length} หลัง ${
+              hasFinancials ? '(รวมข้อมูลบัญชี/ใบแจ้งหนี้)' : ''
+            } ต้องการกู้คืนข้อมูลทันทีหรือไม่?`
+          )
+        ) {
+          if (onRestoreAllData && (parsed.expenses || parsed.invoices || parsed.customers)) {
+            onRestoreAllData({
+              jobs: importedJobs,
+              activeJobId: importedActiveId,
+              customers: parsed.customers,
+              properties: parsed.properties,
+              expenses: parsed.expenses,
+              invoices: parsed.invoices,
+              payments: parsed.payments,
+            });
+          } else {
+            onRestoreJobs(importedJobs, importedActiveId);
+          }
+          setFeedbackMessage(`กู้คืนข้อมูลสำเร็จเรียบร้อย! (${importedJobs.length} วิลล่า)`);
         }
       } catch (err) {
         console.error(err);
