@@ -11,30 +11,61 @@ import {
   ArrowRight,
   ExternalLink,
   Sparkles,
+  Languages,
 } from 'lucide-react';
-import { InspectionJob, MainNavTab } from '../types';
+import {
+  InspectionJob,
+  MainNavTab,
+  Vendor,
+  RecurringService,
+  Task,
+  Property,
+  Customer,
+} from '../types';
+import { VendorsView } from './VendorsView';
+import { CalendarView } from './CalendarView';
+import { useLanguage } from '../i18n/translations';
 
 interface SecondaryViewsProps {
   tab: MainNavTab;
   jobs: InspectionJob[];
+  vendors?: Vendor[];
+  recurringServices?: RecurringService[];
+  tasks?: Task[];
+  properties?: Property[];
+  customers?: Customer[];
   onOpenJobReport: (jobId: string) => void;
   onOpenJobQuotation: (jobId: string) => void;
+  onOpenJobInspection?: (jobId: string) => void;
   onOpenBackupModal: () => void;
   onOpenGoogleDrive: () => void;
   onOpenDashboard: () => void;
   onOpenMollyExpress: () => void;
+  onSaveVendor?: (vendor: Vendor) => void;
+  onOpenScheduleModal?: (job: InspectionJob) => void;
+  onOpenProperty?: (propId: string) => void;
 }
 
 export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
   tab,
   jobs,
+  vendors = [],
+  recurringServices = [],
+  tasks = [],
+  properties = [],
+  customers = [],
   onOpenJobReport,
   onOpenJobQuotation,
+  onOpenJobInspection,
   onOpenBackupModal,
   onOpenGoogleDrive,
   onOpenDashboard,
   onOpenMollyExpress,
+  onSaveVendor,
+  onOpenScheduleModal,
+  onOpenProperty,
 }) => {
+  const { lang, setLanguage, t } = useLanguage();
   if (tab === 'money') {
     const totalRevenue = jobs.reduce((sum, j) => {
       const hw = j.quotation?.hardwareItems?.reduce((s, i) => s + (i.amount || 0), 0) || 0;
@@ -75,7 +106,7 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
           <div className="p-4 rounded-xl bg-white border border-slate-200">
             <span className="text-xs text-slate-400 font-bold uppercase">Total Booked Volume</span>
             <div className="text-2xl font-black text-slate-900 mt-1">
-              ฿{totalRevenue.toLocaleString()}
+              ฿{(totalRevenue || 0).toLocaleString()}
             </div>
             <span className="text-[11px] text-slate-500">{jobs.length} jobs total</span>
           </div>
@@ -83,7 +114,7 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
           <div className="p-4 rounded-xl bg-white border border-slate-200">
             <span className="text-xs text-emerald-600 font-bold uppercase">Collected / Paid</span>
             <div className="text-2xl font-black text-emerald-700 mt-1">
-              ฿{paidRevenue.toLocaleString()}
+              ฿{(paidRevenue || 0).toLocaleString()}
             </div>
             <span className="text-[11px] text-slate-500">From completed &amp; paid jobs</span>
           </div>
@@ -91,7 +122,7 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
           <div className="p-4 rounded-xl bg-white border border-slate-200">
             <span className="text-xs text-amber-600 font-bold uppercase">Awaiting Collection</span>
             <div className="text-2xl font-black text-amber-600 mt-1">
-              ฿{(totalRevenue - paidRevenue).toLocaleString()}
+              ฿{((totalRevenue || 0) - (paidRevenue || 0)).toLocaleString()}
             </div>
             <span className="text-[11px] text-slate-500">Pending quote / active work</span>
           </div>
@@ -171,65 +202,27 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
 
   if (tab === 'vendors') {
     return (
-      <div className="max-w-7xl mx-auto space-y-4 pb-20 sm:pb-12">
-        <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center space-y-3">
-          <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-600">
-            <Truck className="w-6 h-6" />
-          </div>
-          <h2 className="text-lg font-black text-slate-900">Vendors &amp; Contractors Directory</h2>
-          <p className="text-xs text-slate-500 max-w-md mx-auto">
-            Direct coordination with pool cleaners, pest control, air conditioning technicians, and electricians will be available in Phase 2.
-          </p>
-          <div className="pt-2">
-            <button
-              onClick={onOpenMollyExpress}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-[#0f1d33] text-amber-300 rounded-xl text-xs font-bold"
-            >
-              <Sparkles className="w-4 h-4 text-amber-400" />
-              <span>Use Molly Express for Hardware Procurement</span>
-            </button>
-          </div>
-        </div>
-      </div>
+      <VendorsView
+        vendors={vendors}
+        jobs={jobs}
+        onSaveVendor={onSaveVendor || (() => {})}
+        onOpenJobDetail={onOpenJobInspection}
+      />
     );
   }
 
   if (tab === 'calendar') {
     return (
-      <div className="max-w-7xl mx-auto space-y-4 pb-20 sm:pb-12">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-          <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-blue-600" />
-            <span>Calendar &amp; Itinerary</span>
-          </h2>
-          <p className="text-xs text-slate-500">
-            Full schedule of planned villa inspections and appointments
-          </p>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-3">
-          {jobs.map((j) => (
-            <div
-              key={j.id}
-              className="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between gap-3 text-xs"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-12 text-center py-1 bg-slate-100 rounded-lg">
-                  <div className="font-bold text-slate-900">
-                    {j.scheduledDate?.slice(-2) || j.inspectionDate?.slice(0, 2) || '18'}
-                  </div>
-                  <div className="text-[9px] uppercase text-slate-500 font-bold">DATE</div>
-                </div>
-                <div>
-                  <h4 className="font-bold text-slate-900">{j.villaName}</h4>
-                  <p className="text-slate-500">{j.customerName} • {j.serviceType}</p>
-                </div>
-              </div>
-              <span className="font-bold text-blue-600">{j.scheduledTime || 'Scheduled'}</span>
-            </div>
-          ))}
-        </div>
-      </div>
+      <CalendarView
+        jobs={jobs}
+        recurringServices={recurringServices}
+        tasks={tasks}
+        properties={properties}
+        customers={customers}
+        onOpenJobDetail={onOpenJobInspection || (() => {})}
+        onOpenQuickSchedule={onOpenScheduleModal}
+        onOpenProperty={onOpenProperty}
+      />
     );
   }
 
@@ -247,6 +240,43 @@ export const SecondaryViews: React.FC<SecondaryViewsProps> = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Language & UI Settings */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-3">
+            <div className="flex items-center gap-2">
+              <Languages className="w-5 h-5 text-blue-600" />
+              <h3 className="text-sm font-bold text-slate-900">
+                {lang === 'th' ? 'ภาษาเมนูและการแสดงผล' : 'UI Language & Locale'}
+              </h3>
+            </div>
+            <p className="text-xs text-slate-600">
+              {lang === 'th'
+                ? 'เลือกภาษาสำหรับหน้าจอการทำงานของผู้ดูแลระบบ เอกสารเสนอราคาและรายงานสำหรับลูกค้าจะยังคงเลือกภาษาอังกฤษหรือไทยได้แยกต่างหาก'
+                : 'Select interface language for the solo operator. Customer quotations, invoices, and PDF reports retain their own dedicated language.'}
+            </p>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                onClick={() => setLanguage('en')}
+                className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all border ${
+                  lang === 'en'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                }`}
+              >
+                English (Default)
+              </button>
+              <button
+                onClick={() => setLanguage('th')}
+                className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all border ${
+                  lang === 'th'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                }`}
+              >
+                ภาษาไทย (Thai)
+              </button>
+            </div>
+          </div>
+
           <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-3">
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-emerald-600" />

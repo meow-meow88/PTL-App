@@ -20,15 +20,31 @@ import {
   CornerDownRight,
   CheckCircle2,
   AlertCircle,
+  Trash2,
+  Archive,
+  ShieldAlert,
+  RotateCcw,
 } from 'lucide-react';
-import { Customer, CustomerType, Property, InspectionJob } from '../types';
+import {
+  Customer,
+  CustomerType,
+  Property,
+  InspectionJob,
+  Invoice,
+  RecurringService,
+  getOwnerStatusLabel,
+} from '../types';
+import { checkCustomerDeleteSafety, CustomerSafetyReport } from '../utils/crmStorage';
 
 interface CustomersViewProps {
   customers: Customer[];
   properties: Property[];
   jobs: InspectionJob[];
+  invoices?: Invoice[];
+  recurringServices?: RecurringService[];
   onSaveCustomer: (customer: Customer) => void;
   onDeleteCustomer?: (customerId: string) => void;
+  onArchiveCustomer?: (customer: Customer) => void;
   onOpenQuickJobForCustomer: (customer: Customer) => void;
   onOpenJobInspection: (jobId: string) => void;
   onOpenJobQuotation: (jobId: string) => void;
@@ -41,7 +57,11 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
   customers,
   properties,
   jobs,
+  invoices = [],
+  recurringServices = [],
   onSaveCustomer,
+  onDeleteCustomer,
+  onArchiveCustomer,
   onOpenQuickJobForCustomer,
   onOpenJobInspection,
   onOpenJobQuotation,
@@ -55,6 +75,11 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
   const [profileTab, setProfileTab] = useState<ProfileTab>('hierarchy');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [deleteSafetyTarget, setDeleteSafetyTarget] = useState<{
+    customer: Customer;
+    report: CustomerSafetyReport;
+  } | null>(null);
+  const [confirmDeleteText, setConfirmDeleteText] = useState('');
 
   // Filtered customer list
   const filteredCustomers = customers.filter((c) => {
@@ -67,8 +92,13 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
       (c.lineWhatsapp || c.lineOrWhatsapp || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.id.toLowerCase().includes(searchQuery.toLowerCase());
 
+    if (typeFilter === 'archived') {
+      return matchesSearch && c.isArchived === true;
+    }
+
+    const notArchived = !c.isArchived;
     const matchesType = typeFilter === 'all' || c.customerType === typeFilter;
-    return matchesSearch && matchesType;
+    return matchesSearch && notArchived && matchesType;
   });
 
   const selectedCustomer =
@@ -191,7 +221,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                All ({customers.length})
+                All ({customers.filter((c) => !c.isArchived).length})
               </button>
               {(['Expat', 'Overseas Property Owner', 'Local Customer', 'Property Manager'] as CustomerType[]).map((t) => (
                 <button
@@ -206,6 +236,19 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                   {t}
                 </button>
               ))}
+              {customers.some((c) => c.isArchived) && (
+                <button
+                  onClick={() => setTypeFilter('archived')}
+                  className={`text-[10px] font-bold px-2 py-1 rounded-md whitespace-nowrap transition-colors flex items-center gap-1 ${
+                    typeFilter === 'archived'
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                  }`}
+                >
+                  <Archive className="w-2.5 h-2.5" />
+                  <span>Archived ({customers.filter((c) => c.isArchived).length})</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -297,6 +340,38 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const report = checkCustomerDeleteSafety(
+                        selectedCustomer.id,
+                        properties,
+                        jobs,
+                        invoices || [],
+                        recurringServices || []
+                      );
+                      setDeleteSafetyTarget({ customer: selectedCustomer, report });
+                      setConfirmDeleteText('');
+                    }}
+                    className={`flex items-center gap-1 text-xs font-bold px-3 py-2 rounded-xl transition-colors cursor-pointer border ${
+                      selectedCustomer.isArchived
+                        ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
+                        : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
+                    }`}
+                    title={selectedCustomer.isArchived ? 'Archived Customer (Click to manage)' : 'Delete or Archive Customer'}
+                  >
+                    {selectedCustomer.isArchived ? (
+                      <>
+                        <Archive className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Archived</span>
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Delete</span>
+                      </>
+                    )}
+                  </button>
+
                   <button
                     onClick={() => handleOpenEdit(selectedCustomer)}
                     className="flex items-center gap-1 text-xs font-bold px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl transition-colors cursor-pointer"
@@ -485,8 +560,8 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                                     <span className="text-[9px] font-bold bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded">
                                       {j.serviceType}
                                     </span>
-                                    <span className="text-[9px] font-bold text-slate-500">
-                                      {j.status}
+                                    <span className="text-[9px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.2 rounded">
+                                      {getOwnerStatusLabel(j.status)}
                                     </span>
                                   </div>
                                   <div className="text-xs font-bold text-slate-800 truncate mt-0.5">
@@ -583,7 +658,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5 mb-0.5">
                           <span className="text-[9px] font-black uppercase px-2 py-0.2 rounded bg-blue-100 text-blue-800">
-                            {j.status}
+                            {getOwnerStatusLabel(j.status)}
                           </span>
                           <span className="text-[10px] text-slate-400">
                             {j.inspectionDate || j.createdAt?.slice(0, 10)}
@@ -953,6 +1028,147 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete / Archive Safety Modal */}
+      {deleteSafetyTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                {deleteSafetyTarget.report.canPermanentlyDelete ? (
+                  <div className="w-9 h-9 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                ) : (
+                  <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600">
+                    <ShieldAlert className="w-5 h-5" />
+                  </div>
+                )}
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">
+                    {deleteSafetyTarget.report.canPermanentlyDelete
+                      ? 'Confirm Permanent Deletion'
+                      : 'Data Safety: Archive Customer'}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-mono">{deleteSafetyTarget.customer.id}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDeleteSafetyTarget(null)}
+                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div className="text-xs font-black text-slate-900">
+                  {deleteSafetyTarget.customer.name || deleteSafetyTarget.customer.preferredName}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {deleteSafetyTarget.customer.customerType} • Phone: {deleteSafetyTarget.customer.phone || 'None'}
+                </div>
+              </div>
+
+              {deleteSafetyTarget.report.canPermanentlyDelete ? (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
+                    ✓ Verified: This customer has no associated properties, jobs, invoices, or recurring services. Safe to permanently delete.
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    To prevent accidental clicks, please type <strong>DELETE</strong> below to confirm:
+                  </p>
+                  <input
+                    type="text"
+                    value={confirmDeleteText}
+                    onChange={(e) => setConfirmDeleteText(e.target.value)}
+                    placeholder="Type DELETE"
+                    className="w-full px-3 py-2 text-xs font-mono border border-slate-300 rounded-lg bg-white"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                    <strong>Cannot permanently delete:</strong> Customer is tied to active business records. Permanently deleting would break financial accounting and service tracking.
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-center text-xs">
+                    <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                      <div className="font-bold text-slate-800">{deleteSafetyTarget.report.propertiesCount}</div>
+                      <div className="text-[10px] text-slate-500">Properties</div>
+                    </div>
+                    <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                      <div className="font-bold text-slate-800">{deleteSafetyTarget.report.jobsCount}</div>
+                      <div className="text-[10px] text-slate-500">Jobs</div>
+                    </div>
+                    <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                      <div className="font-bold text-slate-800">{deleteSafetyTarget.report.invoicesCount}</div>
+                      <div className="text-[10px] text-slate-500">Invoices</div>
+                    </div>
+                    <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                      <div className="font-bold text-slate-800">{deleteSafetyTarget.report.recurringCount}</div>
+                      <div className="text-[10px] text-slate-500">Recurring Services</div>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-600">
+                    {deleteSafetyTarget.customer.isArchived
+                      ? 'This customer is currently archived. You can unarchive them to return them to active lists.'
+                      : 'Archiving hides this customer from active views while preserving all past jobs, quotes, and invoice histories.'}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteSafetyTarget(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              {deleteSafetyTarget.report.canPermanentlyDelete ? (
+                <button
+                  type="button"
+                  disabled={confirmDeleteText.trim().toUpperCase() !== 'DELETE'}
+                  onClick={() => {
+                    if (onDeleteCustomer) {
+                      onDeleteCustomer(deleteSafetyTarget.customer.id);
+                    }
+                    setDeleteSafetyTarget(null);
+                  }}
+                  className="px-5 py-2 text-xs font-black text-white bg-rose-600 hover:bg-rose-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl shadow-xs cursor-pointer"
+                >
+                  Permanently Delete
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onArchiveCustomer) {
+                      onArchiveCustomer({
+                        ...deleteSafetyTarget.customer,
+                        isArchived: !deleteSafetyTarget.customer.isArchived,
+                      });
+                    }
+                    setDeleteSafetyTarget(null);
+                  }}
+                  className={`px-5 py-2 text-xs font-black text-white rounded-xl shadow-xs cursor-pointer ${
+                    deleteSafetyTarget.customer.isArchived
+                      ? 'bg-blue-600 hover:bg-blue-500'
+                      : 'bg-amber-600 hover:bg-amber-500'
+                  }`}
+                >
+                  {deleteSafetyTarget.customer.isArchived ? 'Unarchive / Restore' : 'Archive Customer'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

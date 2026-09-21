@@ -3,7 +3,7 @@ import { DEFAULT_PTL_LOGO, DEFAULT_PTL_LOGO_BASE64 } from '../data/defaultLogo';
 import { safeGetLocalStorage, safeSetLocalStorage, idbGet, idbSet } from './storage';
 
 const LOGO_VERSION_KEY = 'ptl_logo_version';
-const CURRENT_LOGO_VERSION = 'v7_exact_svg_vector';
+const CURRENT_LOGO_VERSION = 'v8_original_ptl_brand_colors';
 
 export function useCustomLogo(): {
   logoUrl: string;

@@ -24,6 +24,9 @@ import {
   Expense,
   Invoice,
   Payment,
+  Vendor,
+  RecurringService,
+  Task,
 } from '../types';
 import { getLocalSnapshots, LocalSnapshot, restoreLocalSnapshot } from '../utils/storage';
 
@@ -44,6 +47,9 @@ interface BackupRestoreModalProps {
   expenses?: Expense[];
   invoices?: Invoice[];
   payments?: Payment[];
+  vendors?: Vendor[];
+  recurringServices?: RecurringService[];
+  tasks?: Task[];
   onRestoreJobs: (jobs: InspectionJob[], activeJobId?: string) => void;
   onRestoreAllData?: (payload: {
     jobs: InspectionJob[];
@@ -53,6 +59,9 @@ interface BackupRestoreModalProps {
     expenses?: Expense[];
     invoices?: Invoice[];
     payments?: Payment[];
+    vendors?: Vendor[];
+    recurringServices?: RecurringService[];
+    tasks?: Task[];
   }) => void;
   onForceSaveToServer: () => Promise<boolean>;
   onClose: () => void;
@@ -66,6 +75,9 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
   expenses = [],
   invoices = [],
   payments = [],
+  vendors = [],
+  recurringServices = [],
+  tasks = [],
   onRestoreJobs,
   onRestoreAllData,
   onForceSaveToServer,
@@ -131,7 +143,7 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
   const handleExportJson = () => {
     try {
       const exportData = {
-        version: '2.0.0-phase2',
+        version: '3.0.0-phase3',
         exportedAt: new Date().toISOString(),
         activeJobId,
         jobs,
@@ -140,6 +152,9 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
         expenses,
         invoices,
         payments,
+        vendors,
+        recurringServices,
+        tasks,
       };
       const blob = new Blob([JSON.stringify(exportData, null, 2)], {
         type: 'application/json',
@@ -153,7 +168,7 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      setFeedbackMessage('ดาวน์โหลดไฟล์สำรองข้อมูล JSON (รวมระบบการเงินและลูกค้า) เรียบร้อยแล้ว');
+      setFeedbackMessage('ดาวน์โหลดไฟล์สำรองข้อมูล JSON (รวมระบบการเงิน ลูกค้า เวนเดอร์ และงานประจำ) เรียบร้อยแล้ว');
     } catch (err) {
       console.error(err);
       alert('เกิดข้อผิดพลาดในการส่งออกข้อมูล');
@@ -197,12 +212,15 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
             Array.isArray(parsed.invoices) ||
             Array.isArray(parsed.payments) ||
             Array.isArray(parsed.customers) ||
-            Array.isArray(parsed.properties));
+            Array.isArray(parsed.properties) ||
+            Array.isArray(parsed.vendors) ||
+            Array.isArray(parsed.recurringServices) ||
+            Array.isArray(parsed.tasks));
 
         if (
           confirm(
             `พบข้อมูลงานวิลล่าจำนวน ${importedJobs.length} หลัง ${
-              hasFinancials ? '(รวมข้อมูลบัญชี/ใบแจ้งหนี้)' : ''
+              hasFinancials ? '(รวมข้อมูลบัญชี/ใบแจ้งหนี้/เวนเดอร์)' : ''
             } ต้องการกู้คืนข้อมูลทันทีหรือไม่?`
           )
         ) {
@@ -215,6 +233,9 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
               expenses: Array.isArray(parsed.expenses) ? parsed.expenses : undefined,
               invoices: Array.isArray(parsed.invoices) ? parsed.invoices : undefined,
               payments: Array.isArray(parsed.payments) ? parsed.payments : undefined,
+              vendors: Array.isArray(parsed.vendors) ? parsed.vendors : undefined,
+              recurringServices: Array.isArray(parsed.recurringServices) ? parsed.recurringServices : undefined,
+              tasks: Array.isArray(parsed.tasks) ? parsed.tasks : undefined,
             });
           } else {
             onRestoreJobs(importedJobs, importedActiveId);

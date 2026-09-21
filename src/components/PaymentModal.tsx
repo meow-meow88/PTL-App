@@ -91,9 +91,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       return;
     }
 
-    if (parsedAmount > targetInvoice.balanceDue) {
+    if (parsedAmount > (targetInvoice.balanceDue ?? 0)) {
       setValidationError(
-        `Payment cannot exceed the outstanding balance of ฿${targetInvoice.balanceDue.toLocaleString()}.`
+        `Payment cannot exceed the outstanding balance of ฿${(targetInvoice.balanceDue ?? 0).toLocaleString()}.`
       );
       return;
     }
@@ -150,7 +150,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             >
               {invoices.map((inv) => (
                 <option key={inv.id} value={inv.id}>
-                  {inv.invoiceNumber} • ฿{inv.total.toLocaleString()} (Due: ฿{inv.balanceDue.toLocaleString()}) - {inv.status}
+                  {inv.invoiceNumber} • ฿{(inv.total ?? 0).toLocaleString()} (Due: ฿{(inv.balanceDue ?? 0).toLocaleString()}) - {inv.status}
                 </option>
               ))}
             </select>
@@ -158,12 +158,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               <div className="mt-1.5 p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs flex items-center justify-between">
                 <div>
                   <span className="text-slate-500">Invoice Total: </span>
-                  <strong className="text-slate-900">฿{targetInvoice.total.toLocaleString()}</strong>
+                  <strong className="text-slate-900">฿{(targetInvoice.total ?? 0).toLocaleString()}</strong>
                 </div>
                 <div>
                   <span className="text-slate-500">Balance Due: </span>
-                  <strong className={targetInvoice.balanceDue > 0 ? 'text-rose-600' : 'text-emerald-600'}>
-                    ฿{targetInvoice.balanceDue.toLocaleString()}
+                  <strong className={(targetInvoice.balanceDue ?? 0) > 0 ? 'text-rose-600' : 'text-emerald-600'}>
+                    ฿{(targetInvoice.balanceDue ?? 0).toLocaleString()}
                   </strong>
                 </div>
               </div>
@@ -214,7 +214,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               />
               {targetInvoice && (
                 <p className="text-[10px] text-slate-500 mt-1">
-                  Max payable: ฿{targetInvoice.balanceDue.toLocaleString()}
+                  Max payable: ฿{(targetInvoice.balanceDue ?? 0).toLocaleString()}
                 </p>
               )}
             </div>

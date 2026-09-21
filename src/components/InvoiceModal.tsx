@@ -242,10 +242,10 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                     </td>
                     <td className="py-3 text-center text-slate-600 font-medium">{item.qty}</td>
                     <td className="py-3 text-right text-slate-600 font-mono">
-                      ฿{((item.unitPrice || item.amount) / (typeof item.qty === 'number' ? item.qty : 1)).toLocaleString()}
+                      ฿{(((item.unitPrice || item.amount || 0)) / (typeof item.qty === 'number' ? item.qty : 1)).toLocaleString()}
                     </td>
                     <td className="py-3 text-right font-black text-slate-900 font-mono">
-                      ฿{item.amount.toLocaleString()}
+                      ฿{(item.amount ?? 0).toLocaleString()}
                     </td>
                   </tr>
                 ))}
@@ -281,40 +281,42 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             <div className="w-full sm:w-5/12 space-y-2 text-xs">
               <div className="flex justify-between text-slate-600">
                 <span>Subtotal:</span>
-                <span className="font-mono font-bold">฿{invoice.subtotal.toLocaleString()}</span>
+                <span className="font-mono font-bold">฿{(invoice.subtotal ?? 0).toLocaleString()}</span>
               </div>
-              {invoice.discount > 0 && (
+              {(invoice.discount || 0) > 0 && (
                 <div className="flex justify-between text-rose-600">
                   <span>Discount:</span>
-                  <span className="font-mono font-bold">-฿{invoice.discount.toLocaleString()}</span>
+                  <span className="font-mono font-bold">-฿{(invoice.discount ?? 0).toLocaleString()}</span>
                 </div>
               )}
-              {invoice.tax > 0 && (
+              {(invoice.tax || 0) > 0 && (
                 <div className="flex justify-between text-slate-600">
                   <span>VAT (7%):</span>
-                  <span className="font-mono font-bold">฿{invoice.tax.toLocaleString()}</span>
+                  <span className="font-mono font-bold">฿{(invoice.tax ?? 0).toLocaleString()}</span>
                 </div>
               )}
               <div className="flex justify-between text-sm sm:text-base font-black text-slate-900 pt-2 border-t border-slate-300">
                 <span>Total Amount:</span>
-                <span className="font-mono text-blue-900">฿{invoice.total.toLocaleString()}</span>
+                <span className="font-mono text-blue-900">฿{(invoice.total ?? 0).toLocaleString()}</span>
               </div>
 
               <div className="flex justify-between text-emerald-700 font-bold pt-1">
                 <span>Amount Paid:</span>
-                <span className="font-mono">฿{totalPaid.toLocaleString()}</span>
+                <span className="font-mono">฿{(totalPaid ?? 0).toLocaleString()}</span>
               </div>
 
               <div className="flex justify-between items-center text-sm font-black p-2.5 rounded-xl bg-slate-100 border border-slate-300">
-                <span className={balanceDue > 0 ? 'text-rose-700' : 'text-emerald-700'}>
+                <span
+                  className={(balanceDue || 0) > 0 ? 'text-rose-700' : 'text-emerald-700'}
+                >
                   Balance Due:
                 </span>
                 <span
                   className={`font-mono text-base ${
-                    balanceDue > 0 ? 'text-rose-700' : 'text-emerald-700'
+                    (balanceDue || 0) > 0 ? 'text-rose-700' : 'text-emerald-700'
                   }`}
                 >
-                  ฿{balanceDue.toLocaleString()}
+                  ฿{(balanceDue ?? 0).toLocaleString()}
                 </span>
               </div>
             </div>

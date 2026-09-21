@@ -1,26 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import {
   X,
-  Plus,
   Zap,
   Building2,
   User,
   Calendar,
   Clock,
   DollarSign,
-  FileText,
-  CheckCircle2,
-  ChevronDown,
-  ClipboardCheck,
+  AlertCircle,
+  ShieldCheck,
   Wrench,
+  Car,
+  Users,
+  Wifi,
+  Camera,
+  MapPin,
+  CheckCircle2,
 } from 'lucide-react';
+import { Customer, Property, InspectionJob } from '../types';
 import {
-  Customer,
-  Property,
-  InspectionJob,
-  QuickJobServiceType,
-  JobStatus,
-} from '../types';
+  PTL_SERVICES,
+  getWorkflowPresetForService,
+  createDefaultHomeWatchChecklist,
+  isHomeWatchService,
+  ServiceDefinition,
+} from '../utils/serviceWorkflow';
+import { useLanguage } from '../i18n/translations';
+import { DateTimeSelector } from './DateTimeSelector';
+import { formatTime24h } from '../utils/dateTime';
 
 interface QuickJobModalProps {
   isOpen: boolean;
@@ -30,20 +37,8 @@ interface QuickJobModalProps {
   onSaveJob: (newJob: InspectionJob) => void;
   presetCustomerId?: string | null;
   presetPropertyId?: string | null;
+  initialUrgency?: 'Normal' | 'Urgent';
 }
-
-const SERVICE_TYPES: QuickJobServiceType[] = [
-  'Remote Support',
-  'Home Visit',
-  'Home Watch',
-  'Vendor Coordination',
-  'Transportation',
-  'Pet Assistance',
-  'Hospital Assistance',
-  'CCTV',
-  'WiFi / Internet',
-  'Other',
-];
 
 export const QuickJobModal: React.FC<QuickJobModalProps> = ({
   isOpen,
@@ -53,7 +48,10 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
   onSaveJob,
   presetCustomerId,
   presetPropertyId,
+  initialUrgency = 'Normal',
 }) => {
+  const { lang, t } = useLanguage();
+
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(
     presetCustomerId || customers[0]?.id || ''
   );
@@ -62,31 +60,49 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
     presetPropertyId || ''
   );
   const [customPropertyLocation, setCustomPropertyLocation] = useState('');
-  const [serviceType, setServiceType] = useState<QuickJobServiceType>('Home Visit');
-  const [customServiceType, setCustomServiceType] = useState('');
+
+  // Service selection
+  const [selectedServiceId, setSelectedServiceId] = useState<string>('home_watch');
+  const [customServiceText, setCustomServiceText] = useState('');
+  const [activeCategory, setActiveCategory] = useState<string>('all');
+
+  const [urgency, setUrgency] = useState<'Normal' | 'Urgent'>(initialUrgency);
   const [requestDescription, setRequestDescription] = useState('');
   const [price, setPrice] = useState<string>('1500');
+  const [isPriceCustomized, setIsPriceCustomized] = useState<boolean>(false);
   const [scheduledDate, setScheduledDate] = useState<string>(
     new Date().toISOString().slice(0, 10)
   );
-  const [scheduledTime, setScheduledTime] = useState<string>('10:00 AM');
-  const [waitingOn, setWaitingOn] = useState<'none' | 'customer' | 'vendor' | 'parts'>('none');
-  const [jobType, setJobType] = useState<'standard' | 'inspection'>('inspection');
+  const [scheduledTime, setScheduledTime] = useState<string>('10:00');
+
+  const selectedServiceDef = PTL_SERVICES.find((s) => s.id === selectedServiceId) || PTL_SERVICES[0];
 
   // Sync preset props when modal opens
   useEffect(() => {
-    if (presetCustomerId) {
-      setSelectedCustomerId(presetCustomerId);
-      const custProps = properties.filter((p) => p.customerId === presetCustomerId);
-      if (custProps.length > 0) {
-        setSelectedPropertyId(custProps[0].id);
+    if (isOpen) {
+      if (initialUrgency) {
+        setUrgency(initialUrgency);
+        if (initialUrgency === 'Urgent') {
+          // Set immediate time for urgent dispatch
+          const now = new Date();
+          const hh = String(now.getHours()).padStart(2, '0');
+          const mm = String(now.getMinutes()).padStart(2, '0');
+          setScheduledTime(`${hh}:${mm}`);
+        }
       }
-    } else if (customers.length > 0 && !selectedCustomerId) {
-      setSelectedCustomerId(customers[0].id);
+      if (presetCustomerId) {
+        setSelectedCustomerId(presetCustomerId);
+        const custProps = properties.filter((p) => p.customerId === presetCustomerId);
+        if (custProps.length > 0) {
+          setSelectedPropertyId(custProps[0].id);
+        }
+      } else if (customers.length > 0 && !selectedCustomerId) {
+        setSelectedCustomerId(customers[0].id);
+      }
     }
-  }, [presetCustomerId, customers, properties]);
+  }, [isOpen, initialUrgency, presetCustomerId, customers, properties]);
 
-  // When customer changes, automatically pre-select their primary property
+  // When customer changes, pre-select property
   const handleCustomerChange = (custId: string) => {
     setSelectedCustomerId(custId);
     if (custId !== 'NEW') {
@@ -99,6 +115,17 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
     }
   };
 
+  const handleSelectService = (service: ServiceDefinition) => {
+    setSelectedServiceId(service.id);
+    // Price safety: Only set default placeholder price if user has not entered a custom price
+    if (!isPriceCustomized) {
+      setPrice(String(service.defaultPrice));
+    }
+    if (service.id === 'roadside_tire') {
+      setUrgency('Urgent');
+    }
+  };
+
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -107,14 +134,14 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
     const matchedCustomer = customers.find((c) => c.id === selectedCustomerId);
     const finalCustomerName =
       selectedCustomerId === 'NEW'
-        ? customCustomerName.trim() || 'Client'
-        : matchedCustomer?.fullName || matchedCustomer?.preferredName || matchedCustomer?.name || 'Client';
+        ? customCustomerName.trim() || (lang === 'th' ? 'ลูกค้าใหม่' : 'New Customer')
+        : matchedCustomer?.fullName || matchedCustomer?.preferredName || matchedCustomer?.name || 'Customer';
 
     const matchedProperty = properties.find((p) => p.id === selectedPropertyId);
     const finalVillaName =
       selectedPropertyId === 'NEW'
-        ? customPropertyLocation.trim() || 'Client Villa'
-        : matchedProperty?.name || matchedProperty?.propertyName || 'Client Villa';
+        ? customPropertyLocation.trim() || (lang === 'th' ? 'สถานที่หน้างาน' : 'Site Location')
+        : matchedProperty?.name || matchedProperty?.propertyName || 'Site Location';
 
     const finalLocation =
       selectedPropertyId === 'NEW'
@@ -122,15 +149,19 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
         : matchedProperty?.address || 'Phuket, Thailand';
 
     const finalService =
-      serviceType === 'Other' && customServiceType.trim()
-        ? customServiceType.trim()
-        : serviceType;
+      selectedServiceId === 'custom_job' && customServiceText.trim()
+        ? customServiceText.trim()
+        : selectedServiceDef.name;
 
-    const parsedPrice = parseFloat(price) || 0;
+    const parsedPrice = parseFloat(price) || selectedServiceDef.defaultPrice || 1500;
     const today = new Date();
     const dateSlug = today.toISOString().slice(0, 10).replace(/-/g, '');
     const randomSuffix = Math.floor(100 + Math.random() * 900);
     const newJobId = `PTL-JOB-${dateSlug}-${randomSuffix}`;
+
+    const workflowPreset = getWorkflowPresetForService(finalService);
+    const isHomeWatch = isHomeWatchService(finalService);
+    const operationalArea = matchedProperty?.area || (finalLocation.includes(',') ? finalLocation.split(',')[0].trim() : undefined);
 
     const newJob: InspectionJob = {
       id: newJobId,
@@ -147,7 +178,7 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
           : 'villa_owner',
       propertyLocation: finalLocation,
       serviceType: finalService,
-      status: 'Inspection',
+      status: urgency === 'Urgent' ? 'In Progress' : 'Scheduled',
       inspectionDate: scheduledDate,
       createdAt: today.toISOString(),
       inspector: 'PTL Solo Operator',
@@ -156,10 +187,45 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
       requestDescription: requestDescription,
       price: parsedPrice,
       scheduledDate: scheduledDate,
-      scheduledTime: scheduledTime,
-      waitingOn: waitingOn,
-      isSimpleJob: jobType === 'standard',
+      scheduledTime: formatTime24h(scheduledTime) || '10:00',
+      waitingOn: 'none',
+      isSimpleJob: !isHomeWatch,
+      workflowPreset: workflowPreset,
+      urgency: urgency,
+      serviceArea: operationalArea,
+      executionMode: 'OWNER',
+      assignedToType: 'OWNER',
+      assignedAt: today.toISOString(),
+      assignedBy: 'PTL Owner',
+      actualStartedAt: urgency === 'Urgent' ? today.toISOString() : undefined,
+      lastActivityAt: today.toISOString(),
+      events: [
+        {
+          id: `EVT-${dateSlug}-${randomSuffix}-01`,
+          jobId: newJobId,
+          eventType: 'JOB_CREATED',
+          actorType: 'OWNER',
+          actorName: 'PTL Owner',
+          createdAt: today.toISOString(),
+          summary: `Job created for ${finalVillaName} (${finalService})`,
+        },
+        ...(urgency === 'Urgent'
+          ? [
+              {
+                id: `EVT-${dateSlug}-${randomSuffix}-02`,
+                jobId: newJobId,
+                eventType: 'JOB_STARTED' as const,
+                actorType: 'OWNER' as const,
+                actorName: 'PTL Owner',
+                createdAt: today.toISOString(),
+                summary: 'Urgent dispatch started immediately',
+              },
+            ]
+          : []),
+      ],
       items: [],
+      homeWatchChecklist: isHomeWatch ? createDefaultHomeWatchChecklist() : undefined,
+      evidencePhotos: [],
       quotation: {
         refNo: `QT-${dateSlug}-${randomSuffix}`,
         date: today.toLocaleDateString('en-GB'),
@@ -171,8 +237,8 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
           {
             item: 1,
             description: finalService,
-            detail: `งานบริการ: ${finalService}`,
-            estimatedSchedule: 'Immediate / Scheduled',
+            detail: `${finalService} - ${finalVillaName}`,
+            estimatedSchedule: scheduledDate,
             qty: '1 Job',
             amount: parsedPrice,
           },
@@ -193,276 +259,284 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
 
   const customerProperties = properties.filter((p) => p.customerId === selectedCustomerId);
 
+  const categories = [
+    { id: 'all', label: lang === 'th' ? 'ทั้งหมด' : 'All Services' },
+    { id: 'home', label: lang === 'th' ? 'บ้าน & วิลล่า' : 'Home' },
+    { id: 'assistance', label: lang === 'th' ? 'ฉุกเฉิน & ช่วยเหลือ' : 'Assistance' },
+    { id: 'technical', label: lang === 'th' ? 'ระบบ & CCTV' : 'Technical' },
+    { id: 'coordination', label: lang === 'th' ? 'ช่าง & คุมงาน' : 'Coordination' },
+  ];
+
+  const filteredServices = PTL_SERVICES.filter((s) => {
+    if (activeCategory === 'all') return true;
+    return s.category === activeCategory;
+  });
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl relative border border-slate-200 max-h-[92vh] flex flex-col my-auto">
+    <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl max-w-xl w-full p-4 sm:p-6 shadow-2xl relative border border-slate-200 max-h-[94vh] flex flex-col my-auto">
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 bg-slate-100 p-2 rounded-full transition-colors cursor-pointer"
+          className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 p-2 rounded-full transition-colors cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
 
-        {/* Header */}
-        <div className="mb-3.5">
+        {/* Modal Header */}
+        <div className="mb-3">
           <div className="flex items-center gap-2">
-            <span className="p-1.5 bg-blue-100 text-blue-800 rounded-lg">
-              <Zap className="w-4 h-4 text-blue-700" />
+            <span className="p-1.5 bg-blue-600 text-white rounded-xl shadow-xs">
+              <Zap className="w-4 h-4" />
             </span>
-            <h2 className="text-lg sm:text-xl font-black text-slate-900">
-              New Job Dispatch
-            </h2>
-          </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Create a Standard Job or Inspection Job linked to customer and property
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-3.5 overflow-y-auto pr-1 flex-1">
-          {/* Job Type Selector (Standard vs Inspection) */}
-          <div>
-            <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1.5">
-              Job Type *
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setJobType('standard')}
-                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                  jobType === 'standard'
-                    ? 'bg-blue-50 border-blue-600 ring-1 ring-blue-600 shadow-2xs'
-                    : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <Wrench className="w-3.5 h-3.5 text-blue-600" />
-                  <span className="text-xs font-black text-slate-900">Standard Job</span>
-                </div>
-                <p className="text-[10px] text-slate-500 mt-0.5">
-                  Service visit, remote support, quick quote &amp; task
-                </p>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setJobType('inspection')}
-                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                  jobType === 'inspection'
-                    ? 'bg-emerald-50 border-emerald-600 ring-1 ring-emerald-600 shadow-2xs'
-                    : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <ClipboardCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="text-xs font-black text-slate-900">Inspection Job</span>
-                </div>
-                <p className="text-[10px] text-slate-500 mt-0.5">
-                  Room checklist, photos, findings &amp; 3-PDF package
-                </p>
-              </button>
+            <div>
+              <h2 className="text-lg sm:text-xl font-black text-slate-900 leading-tight">
+                {t.quickJob.title}
+              </h2>
+              <p className="text-xs text-slate-500">
+                {t.quickJob.subtitle}
+              </p>
             </div>
           </div>
+        </div>
 
-          {/* Customer Selection */}
-          <div>
-            <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1 flex items-center gap-1">
-              <User className="w-3.5 h-3.5 text-slate-500" />
-              <span>Customer *</span>
-            </label>
-            <select
-              value={selectedCustomerId}
-              onChange={(e) => handleCustomerChange(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 bg-white"
-            >
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name || c.fullName || c.preferredName} ({c.customerType})
-                </option>
-              ))}
-              <option value="NEW">+ Type New Customer Name...</option>
-            </select>
+        <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto pr-1">
+          {/* STEP 1: What does the customer need? */}
+          <div className="bg-slate-50 border border-slate-200 p-3 sm:p-3.5 rounded-xl">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <label className="text-xs font-black text-slate-900 uppercase tracking-wide">
+                {t.quickJob.whatDoesCustomerNeed}
+              </label>
+              <div className="flex gap-1 overflow-x-auto scrollbar-none">
+                {categories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setActiveCategory(cat.id)}
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-md transition-all ${
+                      activeCategory === cat.id
+                        ? 'bg-[#0f1d33] text-white shadow-2xs'
+                        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-            {selectedCustomerId === 'NEW' && (
+            {/* Service Chips Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-40 overflow-y-auto pr-0.5">
+              {filteredServices.map((service) => {
+                const isSelected = selectedServiceId === service.id;
+                return (
+                  <button
+                    key={service.id}
+                    type="button"
+                    onClick={() => handleSelectService(service)}
+                    className={`p-2 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
+                      isSelected
+                        ? 'bg-blue-50 border-blue-600 ring-2 ring-blue-500/40 shadow-xs'
+                        : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-100/70'
+                    }`}
+                  >
+                    <div className="text-xs font-bold text-slate-900 leading-tight">
+                      {lang === 'th' ? service.nameTh : service.nameEn}
+                    </div>
+                    <div className="flex items-center justify-between mt-1 text-[10px] text-slate-500">
+                      <span className="font-semibold text-blue-700">฿{service.defaultPrice.toLocaleString()}</span>
+                      {service.id === 'roadside_tire' && (
+                        <span className="bg-red-100 text-red-700 font-bold px-1 rounded text-[9px]">Emergency</span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {selectedServiceId === 'custom_job' && (
               <input
                 type="text"
                 required
-                placeholder="Enter client full name or preferred name..."
-                value={customCustomerName}
-                onChange={(e) => setCustomCustomerName(e.target.value)}
-                className="mt-2 w-full px-3 py-2 border border-blue-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
+                placeholder={lang === 'th' ? 'ระบุชื่องานบริการ...' : 'Specify custom service name...'}
+                value={customServiceText}
+                onChange={(e) => setCustomServiceText(e.target.value)}
+                className="mt-2 w-full px-3 py-1.5 bg-white border border-blue-400 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
               />
             )}
           </div>
 
-          {/* Property / Location */}
-          <div>
-            <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1 flex items-center gap-1">
-              <Building2 className="w-3.5 h-3.5 text-slate-500" />
-              <span>Property / Site *</span>
-            </label>
-            <select
-              value={selectedPropertyId}
-              onChange={(e) => setSelectedPropertyId(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 bg-white"
-            >
-              {customerProperties.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name || p.propertyName} ({p.area})
-                </option>
-              ))}
-              {properties
-                .filter((p) => p.customerId !== selectedCustomerId)
-                .map((p) => (
+          {/* Urgency Selector */}
+          <div className="flex items-center justify-between gap-3 bg-white p-2.5 rounded-xl border border-slate-200 text-xs">
+            <span className="font-bold text-slate-700 flex items-center gap-1.5">
+              <AlertCircle className={`w-4 h-4 ${urgency === 'Urgent' ? 'text-red-500' : 'text-slate-400'}`} />
+              <span>{t.quickJob.urgency}:</span>
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setUrgency('Normal')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                  urgency === 'Normal'
+                    ? 'bg-slate-800 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {t.quickJob.urgencyNormal}
+              </button>
+              <button
+                type="button"
+                onClick={() => setUrgency('Urgent')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                  urgency === 'Urgent'
+                    ? 'bg-red-600 text-white shadow-xs animate-pulse'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                🚨 {t.quickJob.urgencyHigh}
+              </button>
+            </div>
+          </div>
+
+          {/* STEP 2: Customer & Property Selection */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Customer */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1 flex items-center gap-1">
+                <User className="w-3.5 h-3.5 text-slate-500" />
+                <span>{t.quickJob.selectCustomer} *</span>
+              </label>
+              <select
+                value={selectedCustomerId}
+                onChange={(e) => handleCustomerChange(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name || c.fullName || c.preferredName} ({c.customerType})
+                  </option>
+                ))}
+                <option value="NEW">+ {lang === 'th' ? 'พิมพ์ชื่อลูกค้าใหม่...' : 'Type New Customer...'}</option>
+              </select>
+
+              {selectedCustomerId === 'NEW' && (
+                <input
+                  type="text"
+                  required
+                  placeholder={lang === 'th' ? 'ชื่อลูกค้า...' : 'Customer name...'}
+                  value={customCustomerName}
+                  onChange={(e) => setCustomCustomerName(e.target.value)}
+                  className="mt-1.5 w-full px-2.5 py-1.5 border border-blue-300 rounded-lg text-xs"
+                />
+              )}
+            </div>
+
+            {/* Property / Site */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1 flex items-center gap-1">
+                <Building2 className="w-3.5 h-3.5 text-slate-500" />
+                <span>{t.quickJob.selectProperty} *</span>
+              </label>
+              <select
+                value={selectedPropertyId}
+                onChange={(e) => setSelectedPropertyId(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                {customerProperties.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name || p.propertyName} ({p.area})
                   </option>
                 ))}
-              <option value="NEW">+ Type Other Location / Villa...</option>
-            </select>
+                {properties
+                  .filter((p) => p.customerId !== selectedCustomerId)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name || p.propertyName} ({p.area})
+                    </option>
+                  ))}
+                <option value="NEW">+ {lang === 'th' ? 'ระบุสถานที่อื่น / พิกัด...' : 'Type Other Location...'}</option>
+              </select>
 
-            {selectedPropertyId === 'NEW' && (
-              <input
-                type="text"
-                required
-                placeholder="e.g. Kata Ocean View Villa, Soi 4"
-                value={customPropertyLocation}
-                onChange={(e) => setCustomPropertyLocation(e.target.value)}
-                className="mt-2 w-full px-3 py-2 border border-blue-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
-              />
-            )}
-          </div>
-
-          {/* Service Type Selection */}
-          <div>
-            <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1.5">
-              Service Type *
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-              {SERVICE_TYPES.map((st) => (
-                <button
-                  type="button"
-                  key={st}
-                  onClick={() => setServiceType(st)}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all text-left truncate cursor-pointer ${
-                    serviceType === st
-                      ? 'bg-[#0f1d33] text-white border-[#0f1d33]'
-                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  {st}
-                </button>
-              ))}
+              {selectedPropertyId === 'NEW' && (
+                <input
+                  type="text"
+                  required
+                  placeholder={t.quickJob.locationPlaceholder}
+                  value={customPropertyLocation}
+                  onChange={(e) => setCustomPropertyLocation(e.target.value)}
+                  className="mt-1.5 w-full px-2.5 py-1.5 border border-blue-300 rounded-lg text-xs"
+                />
+              )}
             </div>
-
-            {serviceType === 'Other' && (
-              <input
-                type="text"
-                placeholder="Specify service..."
-                value={customServiceType}
-                onChange={(e) => setCustomServiceType(e.target.value)}
-                className="mt-2 w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-800"
-              />
-            )}
           </div>
 
-          {/* Request / Problem Description */}
+          {/* Request Notes */}
           <div>
-            <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1 flex items-center gap-1">
-              <FileText className="w-3.5 h-3.5 text-slate-500" />
-              <span>Notes / Request Description</span>
+            <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+              {t.quickJob.shortDescription}
             </label>
             <textarea
               rows={2}
+              placeholder={
+                selectedServiceId === 'roadside_tire'
+                  ? 'e.g. Front right tire flat near Bang Tao mosque, customer is waiting on site'
+                  : 'e.g. Regular scheduled visit, check AC in master bedroom, test water pumps'
+              }
               value={requestDescription}
               onChange={(e) => setRequestDescription(e.target.value)}
-              placeholder="e.g. Check WiFi connection drop in guest bedroom, inspect pool pump circuit"
               className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
-          {/* Date, Time & Price */}
-          <div className="grid grid-cols-3 gap-2.5">
+          {/* Price & Schedule */}
+          <div className="space-y-3">
             <div>
-              <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">
-                Scheduled Date
-              </label>
-              <input
-                type="date"
-                value={scheduledDate}
-                onChange={(e) => setScheduledDate(e.target.value)}
-                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">
-                Scheduled Time
-              </label>
-              <input
-                type="text"
-                placeholder="10:00 AM"
-                value={scheduledTime}
-                onChange={(e) => setScheduledTime(e.target.value)}
-                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">
-                Price (฿)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-black text-slate-900 uppercase flex items-center gap-1">
+                  <DollarSign className="w-4 h-4 text-emerald-600" />
+                  <span>{t.quickJob.agreedPrice}</span>
+                </label>
+                {!isPriceCustomized && (
+                  <span className="text-[10px] text-slate-400 font-medium italic">
+                    ({lang === 'th' ? 'ราคาอ้างอิงเริ่มต้น' : 'Base placeholder'})
+                  </span>
+                )}
+              </div>
               <input
                 type="number"
                 value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                placeholder="1500"
-                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 font-bold"
+                onChange={(e) => {
+                  setPrice(e.target.value);
+                  setIsPriceCustomized(true);
+                }}
+                className="w-full min-h-[44px] px-3 py-2 border border-slate-300 rounded-xl text-base font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 font-mono"
               />
             </div>
+
+            {/* Unified DateTimeSelector */}
+            <DateTimeSelector
+              date={scheduledDate}
+              time={scheduledTime}
+              onChangeDate={setScheduledDate}
+              onChangeTime={setScheduledTime}
+              label={lang === 'th' ? 'วันและเวลานัดหมาย' : 'Appointment Date & Time'}
+            />
           </div>
 
-          {/* Waiting Status */}
-          <div>
-            <label className="block text-[10px] font-bold text-slate-700 uppercase mb-1">
-              Waiting Status
-            </label>
-            <div className="grid grid-cols-4 gap-1.5">
-              {[
-                { id: 'none', label: 'None' },
-                { id: 'customer', label: 'Customer' },
-                { id: 'vendor', label: 'Vendor' },
-                { id: 'parts', label: 'Parts' },
-              ].map((w) => (
-                <button
-                  type="button"
-                  key={w.id}
-                  onClick={() => setWaitingOn(w.id as any)}
-                  className={`py-1 text-[11px] font-bold rounded-lg border text-center transition-colors cursor-pointer ${
-                    waitingOn === w.id
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-slate-50 text-slate-600 border-slate-200'
-                  }`}
-                >
-                  {w.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Submit */}
-          <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+          {/* Submit Button */}
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 rounded-xl cursor-pointer"
+              className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 transition-colors"
             >
-              Cancel
+              {t.actions.cancel}
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 text-xs sm:text-sm font-extrabold bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
+              className="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-black px-6 py-2.5 rounded-xl text-xs sm:text-sm shadow-md transition-all flex items-center gap-2 cursor-pointer"
             >
-              Create Job Now
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{t.quickJob.createButton}</span>
             </button>
           </div>
         </form>

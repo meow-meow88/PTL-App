@@ -1,29 +1,29 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <rect width="512" height="512" fill="#ffffff"/>
-  <g transform="translate(6, 15) scale(0.97)" fill="#000000">
-    <!-- Star -->
-    <polygon points="256,48 256,120 244,120" />
-    <polygon points="256,48 268,120 256,120" fill="#111111"/>
-    <polygon points="256,120 180,146 245,132" />
-    <polygon points="256,120 332,146 267,132" />
-    <polygon points="256,168 247,134 256,120" />
-    <polygon points="256,168 256,120 265,134" fill="#111111"/>
-    <polygon points="256,106 266,125 256,144 246,125" fill="#000000"/>
+  <rect width="512" height="512" fill="#ffffff" rx="32"/>
+  <g transform="translate(6, 15) scale(0.97)">
+    <!-- 3D Beveled Star Facets matching PTL Official Brand -->
+    <polygon points="256,48 256,120 244,120" fill="#1a3d69" />
+    <polygon points="256,48 268,120 256,120" fill="#0d2745" />
+    <polygon points="256,120 180,146 245,132" fill="#27538a" />
+    <polygon points="256,120 332,146 267,132" fill="#153358" />
+    <polygon points="256,168 247,134 256,120" fill="#0d2745" />
+    <polygon points="256,168 256,120 265,134" fill="#1a3d69" />
+    <polygon points="256,106 266,125 256,144 246,125" fill="#133054" />
 
-    <!-- Left Shield Frame -->
-    <path d="M 223 108 L 138 108 C 127 108 116 119 116 130 L 116 300 C 116 352 158 400 251 448 L 251 424 C 172 380 136 338 136 300 L 136 132 L 223 132 Z" />
+    <!-- Left Shield Frame (Dark Charcoal) -->
+    <path d="M 223 108 L 138 108 C 127 108 116 119 116 130 L 116 300 C 116 352 158 400 251 448 L 251 424 C 172 380 136 338 136 300 L 136 132 L 223 132 Z" fill="#31343b" />
 
-    <!-- Right Shield Frame -->
-    <path d="M 289 108 L 374 108 C 385 108 396 119 396 130 L 396 300 C 396 352 354 400 261 448 L 261 424 C 340 380 376 338 376 300 L 376 132 L 289 132 Z" />
+    <!-- Right Shield Frame (Medium Slate Grey) -->
+    <path d="M 289 108 L 374 108 C 385 108 396 119 396 130 L 396 300 C 396 352 354 400 261 448 L 261 424 C 340 380 376 338 376 300 L 376 132 L 289 132 Z" fill="#7b8089" />
 
-    <!-- Monogram P -->
-    <path d="M 116 174 L 238 174 C 269 174 290 193 290 221 C 290 249 269 268 238 268 L 191 268 L 191 278 L 153 278 L 153 174 Z M 192 210 L 232 210 C 244 210 252 214 252 221 C 252 228 244 232 232 232 L 192 232 Z" fill-rule="evenodd" />
+    <!-- Monogram P (Dark Charcoal) -->
+    <path d="M 116 174 L 238 174 C 269 174 290 193 290 221 C 290 249 269 268 238 268 L 191 268 L 191 278 L 153 278 L 153 174 Z M 192 210 L 232 210 C 244 210 252 214 252 221 C 252 228 244 232 232 232 L 192 232 Z" fill="#31343b" fill-rule="evenodd" />
 
-    <!-- Monogram T -->
-    <rect x="187" y="278" width="104" height="19" rx="1" />
-    <path d="M 246 297 L 266 297 L 266 438 L 246 438 Z" />
+    <!-- Monogram T (Deep Navy Blue) -->
+    <rect x="187" y="278" width="104" height="19" rx="1" fill="#163b66" />
+    <path d="M 246 297 L 266 297 L 266 438 L 246 438 Z" fill="#163b66" />
 
-    <!-- Monogram L -->
-    <path d="M 274 297 L 292 297 L 292 352 L 362 352 L 362 371 L 274 371 Z" />
+    <!-- Monogram L (Dark Charcoal) -->
+    <path d="M 274 297 L 292 297 L 292 352 L 362 352 L 362 371 L 274 371 Z" fill="#31343b" />
   </g>
 </svg>

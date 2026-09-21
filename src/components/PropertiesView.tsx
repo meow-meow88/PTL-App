@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Building2,
   Search,
@@ -21,15 +21,42 @@ import {
   History,
   FolderOpen,
   Eye,
+  Trash2,
+  Archive,
+  ShieldAlert,
+  Pause,
+  Play,
+  Clock,
+  AlertTriangle,
+  RotateCcw,
+  ShieldCheck,
+  Check,
 } from 'lucide-react';
-import { Property, PropertyType, PropertySystem, Customer, InspectionJob } from '../types';
+import {
+  Property,
+  PropertyType,
+  PropertySystem,
+  Customer,
+  InspectionJob,
+  RecurringService,
+  RecurringFrequency,
+  Invoice,
+  getOwnerStatusLabel,
+} from '../types';
+import { deduplicateProperties, checkPropertyDeleteSafety, PropertySafetyReport } from '../utils/crmStorage';
 
 interface PropertiesViewProps {
   properties: Property[];
   customers: Customer[];
   jobs: InspectionJob[];
+  recurringServices?: RecurringService[];
+  invoices?: Invoice[];
   onSaveProperty: (property: Property) => void;
-  onOpenQuickJobForProperty: (property: Property) => void;
+  onDeleteProperty?: (propertyId: string) => void;
+  onArchiveProperty?: (property: Property) => void;
+  onSaveRecurringService?: (service: RecurringService) => void;
+  onDeleteRecurringService?: (serviceId: string) => void;
+  onOpenQuickJobForProperty: (property: Property, defaultServiceType?: string, parentJobId?: string, defaultDescription?: string) => void;
   onOpenJobInspection: (jobId: string) => void;
   onOpenJobQuotation: (jobId: string) => void;
   initialSelectedPropertyId?: string | null;
@@ -48,6 +75,7 @@ const ALL_SYSTEMS: PropertySystem[] = [
 
 type PropertyTab =
   | 'overview'
+  | 'home_watch'
   | 'access'
   | 'systems'
   | 'jobs'
@@ -60,37 +88,65 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
   properties,
   customers,
   jobs,
+  recurringServices = [],
+  invoices = [],
   onSaveProperty,
+  onDeleteProperty,
+  onArchiveProperty,
+  onSaveRecurringService,
+  onDeleteRecurringService,
   onOpenQuickJobForProperty,
   onOpenJobInspection,
   onOpenJobQuotation,
   initialSelectedPropertyId,
 }) => {
+  const dedupedProperties = useMemo(() => {
+    return deduplicateProperties(properties);
+  }, [properties]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [areaFilter, setAreaFilter] = useState('all');
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(
-    initialSelectedPropertyId || (properties[0]?.id ?? null)
+    initialSelectedPropertyId || (dedupedProperties[0]?.id ?? null)
   );
   const [activeTab, setActiveTab] = useState<PropertyTab>('overview');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
 
-  // Filtered properties
-  const filteredProperties = properties.filter((p) => {
-    const pName = p.name || p.propertyName || '';
-    const pAccess = p.accessInformation || p.accessInfo || '';
-    const matchesSearch =
-      pName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.area.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      pAccess.toLowerCase().includes(searchQuery.toLowerCase());
+  // Home Watch Modal State
+  const [isHomeWatchModalOpen, setIsHomeWatchModalOpen] = useState(false);
+  const [editingHomeWatchPlan, setEditingHomeWatchPlan] = useState<RecurringService | null>(null);
 
-    const matchesArea = areaFilter === 'all' || p.area.toLowerCase().includes(areaFilter.toLowerCase());
-    return matchesSearch && matchesArea;
-  });
+  // Delete / Archive Safety State
+  const [deleteSafetyTarget, setDeleteSafetyTarget] = useState<{
+    property: Property;
+    report: PropertySafetyReport;
+  } | null>(null);
+  const [confirmDeleteText, setConfirmDeleteText] = useState('');
+
+  // Filtered properties
+  const filteredProperties = useMemo(() => {
+    return dedupedProperties.filter((p) => {
+      const pName = p.name || p.propertyName || '';
+      const pAccess = p.accessInformation || p.accessInfo || '';
+      const matchesSearch =
+        pName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.area.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        pAccess.toLowerCase().includes(searchQuery.toLowerCase());
+
+      if (areaFilter === 'archived') {
+        return matchesSearch && p.isArchived === true;
+      }
+
+      const notArchived = !p.isArchived;
+      const matchesArea = areaFilter === 'all' || p.area.toLowerCase().includes(areaFilter.toLowerCase());
+      return matchesSearch && notArchived && matchesArea;
+    });
+  }, [dedupedProperties, searchQuery, areaFilter]);
 
   const selectedProperty =
-    properties.find((p) => p.id === selectedPropertyId) || filteredProperties[0] || null;
+    dedupedProperties.find((p) => p.id === selectedPropertyId) || filteredProperties[0] || null;
 
   // Relations
   const propertyOwner = selectedProperty
@@ -98,6 +154,16 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
     : null;
 
   const propName = selectedProperty?.name || selectedProperty?.propertyName || '';
+
+  // Property Recurring Services (Home Watch)
+  const propertyHomeWatchPlans = useMemo(() => {
+    if (!selectedProperty) return [];
+    return (recurringServices || []).filter(
+      (r) =>
+        r.propertyId === selectedProperty.id ||
+        (r.propertyName && propName && r.propertyName.toLowerCase() === propName.toLowerCase())
+    );
+  }, [recurringServices, selectedProperty, propName]);
 
   const propertyJobs = selectedProperty
     ? jobs.filter(
@@ -107,6 +173,93 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
           (j.villaName && propName && propName.toLowerCase().includes(j.villaName.toLowerCase()))
       )
     : [];
+
+  // Helper to open Home Watch creation
+  const handleOpenHomeWatchModal = (plan?: RecurringService) => {
+    if (!selectedProperty) return;
+    if (plan) {
+      setEditingHomeWatchPlan({ ...plan });
+    } else {
+      const nextDate = new Date();
+      nextDate.setDate(nextDate.getDate() + 14);
+      setEditingHomeWatchPlan({
+        id: `REC-${Date.now().toString().slice(-6)}`,
+        propertyId: selectedProperty.id,
+        propertyName: selectedProperty.name || selectedProperty.propertyName,
+        customerId: selectedProperty.customerId || '',
+        customerName: propertyOwner ? (propertyOwner.name || propertyOwner.preferredName || propertyOwner.fullName) : '',
+        serviceType: 'Home Watch',
+        title: `Home Watch - ${selectedProperty.name || selectedProperty.propertyName}`,
+        frequency: 'Every 2 Weeks',
+        price: 1500,
+        nextDueDate: nextDate.toISOString().slice(0, 10),
+        autoCreateJob: true,
+        notes: 'Inspect grounds, pool pumps, AC units run test, check for roof/pipe leaks, electrical breakers.',
+        status: 'Active',
+      });
+    }
+    setIsHomeWatchModalOpen(true);
+  };
+
+  // Advance Next Due Date after visit completion
+  const handleMarkVisitCompleted = (service: RecurringService) => {
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
+    const nextDate = new Date(today);
+    const freq = service.frequency;
+
+    if (freq === 'Weekly') {
+      nextDate.setDate(nextDate.getDate() + 7);
+    } else if (freq === 'Every 2 Weeks') {
+      nextDate.setDate(nextDate.getDate() + 14);
+    } else if (freq === 'Monthly') {
+      nextDate.setMonth(nextDate.getMonth() + 1);
+    } else if (freq === 'Every 2 Months') {
+      nextDate.setMonth(nextDate.getMonth() + 2);
+    } else if (freq === 'Quarterly') {
+      nextDate.setMonth(nextDate.getMonth() + 3);
+    } else {
+      const intervalDays = service.interval || 14;
+      nextDate.setDate(nextDate.getDate() + intervalDays);
+    }
+
+    const updated: RecurringService = {
+      ...service,
+      lastCompletedDate: todayStr,
+      nextDueDate: nextDate.toISOString().slice(0, 10),
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (onSaveRecurringService) {
+      onSaveRecurringService(updated);
+    }
+  };
+
+  const handleTogglePausePlan = (service: RecurringService) => {
+    const updated: RecurringService = {
+      ...service,
+      status: service.status === 'Active' ? 'Paused' : 'Active',
+      updatedAt: new Date().toISOString(),
+    };
+    if (onSaveRecurringService) {
+      onSaveRecurringService(updated);
+    }
+  };
+
+  const getDaysRemainingLabel = (dueDateStr?: string) => {
+    if (!dueDateStr) return { text: 'No date set', color: 'text-slate-500 bg-slate-100' };
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(dueDateStr);
+    due.setHours(0, 0, 0, 0);
+    const diffTime = due.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return { text: 'Due Today', color: 'text-amber-800 bg-amber-100 ring-1 ring-amber-300 font-black' };
+    if (diffDays === 1) return { text: 'Due Tomorrow', color: 'text-blue-800 bg-blue-100 font-bold' };
+    if (diffDays > 1) return { text: `Due in ${diffDays} days`, color: 'text-emerald-800 bg-emerald-100 font-bold' };
+    return { text: `Overdue ${Math.abs(diffDays)} day${Math.abs(diffDays) > 1 ? 's' : ''}`, color: 'text-rose-800 bg-rose-100 ring-1 ring-rose-300 font-black' };
+  };
 
   // Collect photos from findings of jobs on this property
   const propertyPhotos: { url: string; title: string; date: string; jobId: string }[] = [];
@@ -188,7 +341,7 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
               Property Database
             </h1>
             <span className="text-xs font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
-              {properties.length} properties
+              {dedupedProperties.length} properties
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -231,7 +384,7 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                All ({properties.length})
+                All ({dedupedProperties.length})
               </button>
               {['Kathu', 'Nai Harn', 'Rawai', 'Patong', 'Chalong', 'Bang Tao', 'Cherngtalay'].map((area) => (
                 <button
@@ -246,6 +399,16 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
                   {area}
                 </button>
               ))}
+              <button
+                onClick={() => setAreaFilter('archived')}
+                className={`text-[10px] font-bold px-2 py-1 rounded-md whitespace-nowrap transition-colors ${
+                  areaFilter === 'archived'
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                }`}
+              >
+                Archived ({dedupedProperties.filter((p) => p.isArchived).length})
+              </button>
             </div>
           </div>
 
@@ -329,7 +492,47 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center flex-wrap gap-2">
+                  <button
+                    onClick={() => handleOpenHomeWatchModal()}
+                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl transition-colors cursor-pointer"
+                    title="Set up recurring Home Watch plan for this property"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>+ Home Watch Plan</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const report = checkPropertyDeleteSafety(
+                        selectedProperty.id,
+                        jobs,
+                        invoices,
+                        recurringServices
+                      );
+                      setDeleteSafetyTarget({ property: selectedProperty, report });
+                      setConfirmDeleteText('');
+                    }}
+                    className={`flex items-center gap-1 text-xs font-bold px-3 py-2 rounded-xl transition-colors cursor-pointer border ${
+                      selectedProperty.isArchived
+                        ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
+                        : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
+                    }`}
+                    title={selectedProperty.isArchived ? 'Archived Property (Click to manage)' : 'Delete or Archive Property'}
+                  >
+                    {selectedProperty.isArchived ? (
+                      <>
+                        <Archive className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Archived</span>
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Delete</span>
+                      </>
+                    )}
+                  </button>
+
                   <button
                     onClick={() => handleOpenEdit(selectedProperty)}
                     className="flex items-center gap-1 text-xs font-bold px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl transition-colors cursor-pointer"
@@ -348,11 +551,12 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
                 </div>
               </div>
 
-              {/* Property Profile 8 Tabs */}
+              {/* Property Profile Tabs */}
               <div className="border-b border-slate-200 flex items-center gap-1 overflow-x-auto scrollbar-none pt-1">
                 {(
                   [
                     { id: 'overview', label: 'Overview' },
+                    { id: 'home_watch', label: `Home Watch (${propertyHomeWatchPlans.length})` },
                     { id: 'access', label: 'Access' },
                     { id: 'systems', label: `Systems (${(selectedProperty.systems || selectedProperty.systemsInstalled || []).length})` },
                     { id: 'jobs', label: `Jobs (${propertyJobs.length})` },
@@ -379,6 +583,128 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
               {/* TAB 1: OVERVIEW */}
               {activeTab === 'overview' && (
                 <div className="space-y-4">
+                  {/* Home Watch Status Card on Overview */}
+                  {propertyHomeWatchPlans.length > 0 ? (
+                    <div className="p-4 rounded-xl bg-gradient-to-br from-indigo-50/90 to-purple-50/70 border border-indigo-200 shadow-xs space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="p-1.5 bg-indigo-600 text-white rounded-lg shadow-xs">
+                            <ShieldCheck className="w-4 h-4" />
+                          </span>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-xs font-black uppercase tracking-wider text-indigo-950">
+                                Home Watch Recurring Plan
+                              </h3>
+                              <span
+                                className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                  propertyHomeWatchPlans[0].status === 'Active'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}
+                              >
+                                {propertyHomeWatchPlans[0].status || 'Active'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-indigo-800/80 font-medium mt-0.5">
+                              {propertyHomeWatchPlans[0].frequency} • ฿{(propertyHomeWatchPlans[0].price || 0).toLocaleString()} / visit
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {(() => {
+                            const badge = getDaysRemainingLabel(propertyHomeWatchPlans[0].nextDueDate);
+                            return (
+                              <span className={`text-xs px-2.5 py-1 rounded-lg ${badge.color}`}>
+                                {badge.text}
+                              </span>
+                            );
+                          })()}
+                          <button
+                            onClick={() => setActiveTab('home_watch')}
+                            className="text-xs font-bold text-indigo-700 hover:text-indigo-900 bg-white/80 hover:bg-white px-3 py-1.5 rounded-lg border border-indigo-200 transition-colors cursor-pointer"
+                          >
+                            Manage Plan →
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1 text-xs">
+                        <div className="bg-white/80 p-2.5 rounded-lg border border-indigo-100">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block">Next Due Date</span>
+                          <span className="font-bold text-slate-800 font-mono">
+                            {propertyHomeWatchPlans[0].nextDueDate || 'Not set'}
+                          </span>
+                        </div>
+                        <div className="bg-white/80 p-2.5 rounded-lg border border-indigo-100">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block">Last Visit</span>
+                          <span className="font-bold text-slate-800 font-mono">
+                            {propertyHomeWatchPlans[0].lastCompletedDate || 'None recorded'}
+                          </span>
+                        </div>
+                        <div className="col-span-2 sm:col-span-1 bg-white/80 p-2.5 rounded-lg border border-indigo-100 flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-400 block">Auto-Create Job</span>
+                            <span className="font-bold text-slate-800">
+                              {propertyHomeWatchPlans[0].autoCreateJob ? 'Enabled' : 'Manual'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center flex-wrap gap-2 pt-1 border-t border-indigo-100/80">
+                        <button
+                          onClick={() => handleMarkVisitCompleted(propertyHomeWatchPlans[0])}
+                          className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg shadow-xs transition-colors cursor-pointer"
+                        >
+                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                          <span>Mark Visit Completed</span>
+                        </button>
+
+                        <button
+                          onClick={() => onOpenQuickJobForProperty(selectedProperty, 'Home Watch')}
+                          className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-300 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>Schedule Visit Job</span>
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            onOpenQuickJobForProperty(
+                              selectedProperty,
+                              'Maintenance / Repair',
+                              undefined,
+                              `Issue found during Home Watch at ${selectedProperty.name || selectedProperty.propertyName}: `
+                            )
+                          }
+                          className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg transition-colors cursor-pointer"
+                          title="Log problem discovered during Home Watch"
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                          <span>+ Create Follow-up Job</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 rounded-xl bg-slate-50 border border-dashed border-slate-300 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-slate-400" />
+                        <div>
+                          <p className="text-xs font-bold text-slate-700">No Home Watch Plan Configured</p>
+                          <p className="text-[11px] text-slate-400">Keep this property protected with scheduled routine visits.</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleOpenHomeWatchModal()}
+                        className="text-xs font-bold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg border border-indigo-200 transition-colors cursor-pointer whitespace-nowrap"
+                      >
+                        + Set Up Home Watch
+                      </button>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                       <div className="text-[10px] font-bold uppercase text-slate-400 mb-1">
@@ -430,6 +756,300 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
                       <ExternalLink className="w-3 h-3 ml-1" />
                     </a>
                   )}
+                </div>
+              )}
+
+              {/* TAB: HOME WATCH (PROPERTY-FIRST RECURRING PLANS) */}
+              {activeTab === 'home_watch' && (
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-5 h-5 text-indigo-600" />
+                        <h3 className="text-sm font-black text-slate-900">
+                          Home Watch &amp; Recurring Safeguarding Plans
+                        </h3>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Scheduled routine surveillance, storm checks, and preventive maintenance for {selectedProperty.name || selectedProperty.propertyName}.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => handleOpenHomeWatchModal()}
+                      className="flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-xs transition-colors cursor-pointer self-start sm:self-auto"
+                    >
+                      <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                      <span>+ New Plan</span>
+                    </button>
+                  </div>
+
+                  {propertyHomeWatchPlans.length === 0 ? (
+                    <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 space-y-3">
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center mx-auto">
+                        <Shield className="w-6 h-6" />
+                      </div>
+                      <div className="max-w-sm mx-auto">
+                        <h4 className="text-sm font-black text-slate-900">No Home Watch Plan Configured</h4>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Create a recurring visit schedule (e.g. Every 2 Weeks) so visits appear automatically in your My Day schedule and calendar.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleOpenHomeWatchModal()}
+                        className="inline-flex items-center gap-1.5 text-xs font-black px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-xs transition-colors cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                        <span>Create Home Watch Plan</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {propertyHomeWatchPlans.map((plan) => {
+                        const badge = getDaysRemainingLabel(plan.nextDueDate);
+                        const isPaused = plan.status === 'Paused';
+
+                        return (
+                          <div
+                            key={plan.id}
+                            className={`p-5 rounded-2xl border transition-all ${
+                              isPaused
+                                ? 'bg-slate-50 border-slate-300 opacity-90'
+                                : 'bg-white border-indigo-200 shadow-xs'
+                            }`}
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-3 border-b border-slate-100">
+                              <div>
+                                <div className="flex items-center flex-wrap gap-2 mb-1">
+                                  <span className="text-[10px] font-mono font-bold text-slate-400">
+                                    {plan.id}
+                                  </span>
+                                  <span
+                                    className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                      isPaused
+                                        ? 'bg-amber-100 text-amber-800'
+                                        : 'bg-emerald-100 text-emerald-800'
+                                    }`}
+                                  >
+                                    {plan.status || 'Active'}
+                                  </span>
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+                                    {plan.frequency}
+                                  </span>
+                                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                                    ฿{(plan.price || 0).toLocaleString()} / visit
+                                  </span>
+                                  {plan.planType === 'finite' && (
+                                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                                      Package: {plan.visitsCompleted || 0}/{plan.totalVisits || 0} visits done
+                                    </span>
+                                  )}
+                                  {plan.planType === 'ongoing' && (
+                                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 border border-blue-200">
+                                      Ongoing Subscription
+                                    </span>
+                                  )}
+                                </div>
+                                <h4 className="text-base font-black text-slate-900">
+                                  {plan.title || `Home Watch - ${selectedProperty.name || selectedProperty.propertyName}`}
+                                </h4>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <span className={`text-xs px-2.5 py-1 rounded-lg ${badge.color}`}>
+                                  {badge.text}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Finite package progress indicator */}
+                            {plan.planType === 'finite' && plan.totalVisits && (
+                              <div className="py-2.5 px-3 bg-amber-50/70 border border-amber-200/80 rounded-xl my-2 text-xs">
+                                <div className="flex items-center justify-between text-amber-900 font-bold mb-1.5">
+                                  <span>Fixed Visit Package Progress</span>
+                                  <span>
+                                    {plan.visitsCompleted || 0} of {plan.totalVisits} visits completed ({Math.max(0, (plan.totalVisits || 0) - (plan.visitsCompleted || 0))} remaining)
+                                  </span>
+                                </div>
+                                <div className="w-full bg-amber-200 rounded-full h-2">
+                                  <div
+                                    className="bg-amber-600 h-2 rounded-full transition-all duration-300"
+                                    style={{
+                                      width: `${Math.min(100, Math.round(((plan.visitsCompleted || 0) / (plan.totalVisits || 1)) * 100))}%`,
+                                    }}
+                                  />
+                                </div>
+                                {plan.visitDates && plan.visitDates.length > 0 && (
+                                  <div className="mt-2 text-[11px] text-amber-950 flex flex-wrap gap-1 items-center">
+                                    <span className="font-semibold">Scheduled Dates:</span>
+                                    {plan.visitDates.map((d, i) => (
+                                      <span key={i} className="px-1.5 py-0.5 bg-white border border-amber-200 rounded font-mono">
+                                        #{i + 1}: {d}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Plan Details Grid */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-3 text-xs">
+                              <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Next Due Date</span>
+                                <span className="font-bold text-slate-900 font-mono">
+                                  {plan.nextDueDate || 'Not set'}
+                                </span>
+                              </div>
+                              <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Last Visit</span>
+                                <span className="font-bold text-slate-900 font-mono">
+                                  {plan.lastCompletedDate || 'None recorded'}
+                                </span>
+                              </div>
+                              <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Auto-Job</span>
+                                <span className="font-bold text-slate-900">
+                                  {plan.autoCreateJob ? 'Enabled (Automatic)' : 'Manual Only'}
+                                </span>
+                              </div>
+                              <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Service Type</span>
+                                <span className="font-bold text-slate-900">{plan.serviceType}</span>
+                              </div>
+                            </div>
+
+                            {/* Inspection Focus / Instructions */}
+                            {plan.notes && (
+                              <div className="p-3 bg-indigo-50/40 rounded-xl border border-indigo-100/60 text-xs text-indigo-950 mb-3">
+                                <span className="font-bold block mb-0.5 text-[11px] uppercase tracking-wider text-indigo-800">
+                                  Inspection Checklist &amp; Focus:
+                                </span>
+                                <p className="leading-relaxed">{plan.notes}</p>
+                              </div>
+                            )}
+
+                            {/* Action Buttons */}
+                            <div className="flex items-center flex-wrap gap-2 pt-2 border-t border-slate-100">
+                              <button
+                                onClick={() => handleMarkVisitCompleted(plan)}
+                                className="flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-xs transition-colors cursor-pointer"
+                                title="Record visit done today and advance next due date"
+                              >
+                                <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                <span>Mark Visit Completed</span>
+                              </button>
+
+                              <button
+                                onClick={() => onOpenQuickJobForProperty(selectedProperty, 'Home Watch')}
+                                className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl transition-colors cursor-pointer"
+                              >
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>Schedule Job for Next Visit</span>
+                              </button>
+
+                              <button
+                                onClick={() =>
+                                  onOpenQuickJobForProperty(
+                                    selectedProperty,
+                                    'Maintenance / Repair',
+                                    undefined,
+                                    `Issue found during Home Watch at ${selectedProperty.name || selectedProperty.propertyName}: `
+                                  )
+                                }
+                                className="flex items-center gap-1 text-xs font-bold px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl transition-colors cursor-pointer"
+                                title="Discovered a leak, broken AC, or pump issue during Home Watch visit"
+                              >
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                                <span>+ Create Follow-up Job</span>
+                              </button>
+
+                              <button
+                                onClick={() => handleTogglePausePlan(plan)}
+                                className="flex items-center gap-1 text-xs font-bold px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors cursor-pointer"
+                              >
+                                {isPaused ? (
+                                  <>
+                                    <Play className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>Resume</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Pause className="w-3.5 h-3.5 text-amber-600" />
+                                    <span>Pause</span>
+                                  </>
+                                )}
+                              </button>
+
+                              <button
+                                onClick={() => handleOpenHomeWatchModal(plan)}
+                                className="flex items-center gap-1 text-xs font-bold px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors cursor-pointer"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                                <span>Edit</span>
+                              </button>
+
+                              {onDeleteRecurringService && (
+                                <button
+                                  onClick={() => {
+                                    if (confirm('Cancel and delete this Home Watch plan?')) {
+                                      onDeleteRecurringService(plan.id);
+                                    }
+                                  }}
+                                  className="flex items-center gap-1 text-xs font-bold px-3 py-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer ml-auto"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>Cancel Plan</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Past Home Watch Visits & History */}
+                  <div className="mt-6 pt-4 border-t border-slate-200">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 mb-3 flex items-center gap-1.5">
+                      <History className="w-4 h-4 text-slate-400" />
+                      <span>Past Visits &amp; Inspections for this Property</span>
+                    </h4>
+
+                    {propertyJobs.length === 0 ? (
+                      <p className="text-xs text-slate-400 p-4 bg-slate-50 rounded-xl border border-slate-200 text-center">
+                        No inspection visits logged yet.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {propertyJobs.slice(0, 5).map((job) => (
+                          <div
+                            key={job.id}
+                            className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3 text-xs"
+                          >
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-[10px] text-slate-400">{job.id}</span>
+                                <span className="font-bold text-slate-800">{job.serviceType || 'Inspection'}</span>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-800">
+                                  {getOwnerStatusLabel(job.status)}
+                                </span>
+                              </div>
+                              <p className="text-slate-500 text-[11px] mt-0.5">
+                                Date: {job.inspectionDate || job.createdAt?.slice(0, 10)} • Findings: {job.items?.length || 0}
+                              </p>
+                            </div>
+
+                            <button
+                              onClick={() => onOpenJobInspection(job.id)}
+                              className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-white px-3 py-1.5 rounded-lg border border-slate-200 hover:border-slate-300"
+                            >
+                              View Report →
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -897,6 +1517,389 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* HOME WATCH CONFIGURATION MODAL (PROPERTY-FIRST) */}
+      {isHomeWatchModalOpen && editingHomeWatchPlan && selectedProperty && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-700 shadow-xs">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">
+                    {editingHomeWatchPlan.id.startsWith('REC-') && propertyHomeWatchPlans.some(p => p.id === editingHomeWatchPlan.id)
+                      ? 'Edit Home Watch Plan'
+                      : 'Create Home Watch Plan'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Tied directly to {selectedProperty.name || selectedProperty.propertyName}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsHomeWatchModalOpen(false)}
+                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (onSaveRecurringService && editingHomeWatchPlan) {
+                  onSaveRecurringService({
+                    ...editingHomeWatchPlan,
+                    updatedAt: new Date().toISOString(),
+                  });
+                }
+                setIsHomeWatchModalOpen(false);
+              }}
+              className="p-5 space-y-4 max-h-[80vh] overflow-y-auto"
+            >
+              {/* Pre-bound Property & Client Info (No re-selection required) */}
+              <div className="bg-indigo-50/70 p-3.5 rounded-xl border border-indigo-100 text-xs">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase text-indigo-400 block">Property</span>
+                    <span className="font-black text-indigo-950">
+                      {selectedProperty.name || selectedProperty.propertyName}
+                    </span>
+                    <span className="text-[10px] text-indigo-700 block">{selectedProperty.area}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase text-indigo-400 block">Owner / Client</span>
+                    <span className="font-black text-indigo-950">
+                      {propertyOwner ? (propertyOwner.name || propertyOwner.preferredName || propertyOwner.fullName) : 'Unassigned'}
+                    </span>
+                    <span className="text-[10px] text-indigo-700 block">{propertyOwner?.phone || 'No phone'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Service Title */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Plan Name / Title
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingHomeWatchPlan.title}
+                  onChange={(e) =>
+                    setEditingHomeWatchPlan({ ...editingHomeWatchPlan, title: e.target.value })
+                  }
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:bg-white"
+                />
+              </div>
+
+              {/* Frequency & Price */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Visit Frequency
+                  </label>
+                  <select
+                    value={editingHomeWatchPlan.frequency}
+                    onChange={(e) =>
+                      setEditingHomeWatchPlan({
+                        ...editingHomeWatchPlan,
+                        frequency: e.target.value as RecurringFrequency,
+                      })
+                    }
+                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:bg-white font-medium"
+                  >
+                    <option value="Weekly">Weekly (Every 7 days)</option>
+                    <option value="Every 2 Weeks">Every 2 Weeks (14 days - Standard)</option>
+                    <option value="Monthly">Monthly (Every 30 days)</option>
+                    <option value="Every 2 Months">Every 2 Months</option>
+                    <option value="Quarterly">Quarterly (Every 3 months)</option>
+                    <option value="Twice a Week">Twice a Week</option>
+                    <option value="Custom">Custom Interval (Days)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Price per Visit (THB)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-xs font-bold text-slate-400">฿</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="50"
+                      value={editingHomeWatchPlan.price || 0}
+                      onChange={(e) =>
+                        setEditingHomeWatchPlan({
+                          ...editingHomeWatchPlan,
+                          price: parseFloat(e.target.value) || 0,
+                        })
+                      }
+                      className="w-full pl-7 pr-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:bg-white font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Custom Interval if selected */}
+              {editingHomeWatchPlan.frequency === 'Custom' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Custom Interval (Number of Days)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editingHomeWatchPlan.customIntervalDays || 14}
+                    onChange={(e) =>
+                      setEditingHomeWatchPlan({
+                        ...editingHomeWatchPlan,
+                        customIntervalDays: parseInt(e.target.value) || 14,
+                      })
+                    }
+                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:bg-white"
+                  />
+                </div>
+              )}
+
+              {/* Next Visit Date & Auto-Create Job */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Next Due Date
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={editingHomeWatchPlan.nextDueDate}
+                    onChange={(e) =>
+                      setEditingHomeWatchPlan({
+                        ...editingHomeWatchPlan,
+                        nextDueDate: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:bg-white font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Job Creation Setting
+                  </label>
+                  <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 bg-slate-50 text-xs cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editingHomeWatchPlan.autoCreateJob}
+                      onChange={(e) =>
+                        setEditingHomeWatchPlan({
+                          ...editingHomeWatchPlan,
+                          autoCreateJob: e.target.checked,
+                        })
+                      }
+                      className="rounded text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="font-bold text-slate-800">Auto-create Job on schedule</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Inspection Focus / Checklist */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Inspection Focus &amp; Notes
+                </label>
+                <textarea
+                  rows={3}
+                  value={editingHomeWatchPlan.notes}
+                  onChange={(e) =>
+                    setEditingHomeWatchPlan({ ...editingHomeWatchPlan, notes: e.target.value })
+                  }
+                  placeholder="e.g. Check perimeter, pool pump, AC units run test, check for roof/pipe leaks, electrical breakers."
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:bg-white"
+                />
+              </div>
+
+              {/* Status */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Plan Status
+                </label>
+                <select
+                  value={editingHomeWatchPlan.status}
+                  onChange={(e) =>
+                    setEditingHomeWatchPlan({
+                      ...editingHomeWatchPlan,
+                      status: e.target.value as 'Active' | 'Paused' | 'Completed' | 'Cancelled',
+                    })
+                  }
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:bg-white"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Paused">Paused</option>
+                  <option value="Completed">Completed</option>
+                  <option value="Cancelled">Cancelled</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsHomeWatchModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-xs cursor-pointer"
+                >
+                  Save Home Watch Plan
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE / ARCHIVE SAFETY MODAL FOR PROPERTY */}
+      {deleteSafetyTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                {deleteSafetyTarget.report.canPermanentlyDelete ? (
+                  <div className="w-9 h-9 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                ) : (
+                  <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600">
+                    <ShieldAlert className="w-5 h-5" />
+                  </div>
+                )}
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">
+                    {deleteSafetyTarget.report.canPermanentlyDelete
+                      ? 'Confirm Permanent Deletion'
+                      : 'Data Safety: Archive Property'}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-mono">{deleteSafetyTarget.property.id}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDeleteSafetyTarget(null)}
+                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div className="text-xs font-black text-slate-900">
+                  {deleteSafetyTarget.property.name || deleteSafetyTarget.property.propertyName}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {deleteSafetyTarget.property.area} • {deleteSafetyTarget.property.address}
+                </div>
+              </div>
+
+              {deleteSafetyTarget.report.canPermanentlyDelete ? (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
+                    ✓ Verified: This property has no associated inspection jobs, invoices, or recurring Home Watch plans. Safe to permanently delete.
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    To prevent accidental clicks, please type <strong>DELETE</strong> below to confirm:
+                  </p>
+                  <input
+                    type="text"
+                    value={confirmDeleteText}
+                    onChange={(e) => setConfirmDeleteText(e.target.value)}
+                    placeholder="Type DELETE"
+                    className="w-full px-3 py-2 text-xs font-mono border border-slate-300 rounded-lg bg-white"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                    <strong>Cannot permanently delete:</strong> Property is tied to existing records. Deleting it would break historical quotations, invoices, and past service logs.
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                    <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                      <div className="font-bold text-slate-800">{deleteSafetyTarget.report.jobsCount}</div>
+                      <div className="text-[10px] text-slate-500">Jobs</div>
+                    </div>
+                    <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                      <div className="font-bold text-slate-800">{deleteSafetyTarget.report.invoicesCount}</div>
+                      <div className="text-[10px] text-slate-500">Invoices</div>
+                    </div>
+                    <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                      <div className="font-bold text-slate-800">{deleteSafetyTarget.report.recurringCount}</div>
+                      <div className="text-[10px] text-slate-500">Recurring Plans</div>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-600">
+                    {deleteSafetyTarget.property.isArchived
+                      ? 'This property is currently archived. You can unarchive it to return it to active lists.'
+                      : 'Archiving hides this property from active views while preserving all villa systems, access codes, and past inspection history.'}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteSafetyTarget(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              {deleteSafetyTarget.report.canPermanentlyDelete ? (
+                <button
+                  type="button"
+                  disabled={confirmDeleteText.trim().toUpperCase() !== 'DELETE'}
+                  onClick={() => {
+                    if (onDeleteProperty) {
+                      onDeleteProperty(deleteSafetyTarget.property.id);
+                    }
+                    setDeleteSafetyTarget(null);
+                  }}
+                  className="px-5 py-2 text-xs font-black text-white bg-rose-600 hover:bg-rose-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl shadow-xs cursor-pointer"
+                >
+                  Permanently Delete
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onArchiveProperty) {
+                      onArchiveProperty({
+                        ...deleteSafetyTarget.property,
+                        isArchived: !deleteSafetyTarget.property.isArchived,
+                      });
+                    }
+                    setDeleteSafetyTarget(null);
+                  }}
+                  className={`px-5 py-2 text-xs font-black text-white rounded-xl shadow-xs cursor-pointer ${
+                    deleteSafetyTarget.property.isArchived
+                      ? 'bg-blue-600 hover:bg-blue-500'
+                      : 'bg-amber-600 hover:bg-amber-500'
+                  }`}
+                >
+                  {deleteSafetyTarget.property.isArchived ? 'Unarchive / Restore' : 'Archive Property'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

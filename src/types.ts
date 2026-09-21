@@ -3,18 +3,20 @@ export type CustomerGroup = 'expat' | 'villa_owner' | 'rental_investor';
 // PTL V2 Extended Job Status Lifecycle (with backward compatibility)
 export type JobStatus =
   | 'New'
-  | 'Quoted'
-  | 'Approved'
+  | 'Waiting Approval'
   | 'Scheduled'
   | 'In Progress'
   | 'Waiting Customer'
   | 'Waiting Vendor'
+  | 'Waiting Payment'
   | 'Completed'
+  | 'Cancelled'
+  // Backward compatibility aliases:
+  | 'Quoted'
+  | 'Approved'
   | 'Invoiced'
   | 'Partially Paid'
   | 'Paid'
-  | 'Cancelled'
-  // Backward compatibility aliases:
   | 'Inspection';
 
 export function normalizeJobStatus(status?: string): JobStatus {
@@ -22,11 +24,14 @@ export function normalizeJobStatus(status?: string): JobStatus {
   const clean = status.trim();
   switch (clean.toLowerCase()) {
     case 'inspection':
-      return 'Inspection';
+      return 'In Progress';
     case 'quoted':
-      return 'Quoted';
+      return 'Waiting Approval';
     case 'approved':
-      return 'Approved';
+      return 'Scheduled';
+    case 'waiting approval':
+    case 'waiting_approval':
+      return 'Waiting Approval';
     case 'scheduled':
       return 'Scheduled';
     case 'in progress':
@@ -38,15 +43,18 @@ export function normalizeJobStatus(status?: string): JobStatus {
     case 'waiting vendor':
     case 'waiting_vendor':
       return 'Waiting Vendor';
+    case 'waiting payment':
+    case 'waiting_payment':
+      return 'Waiting Payment';
     case 'completed':
       return 'Completed';
     case 'invoiced':
-      return 'Invoiced';
+      return 'Waiting Payment';
     case 'partially paid':
     case 'partially_paid':
-      return 'Partially Paid';
+      return 'Waiting Payment';
     case 'paid':
-      return 'Paid';
+      return 'Completed';
     case 'cancelled':
     case 'canceled':
       return 'Cancelled';
@@ -54,6 +62,36 @@ export function normalizeJobStatus(status?: string): JobStatus {
       return 'New';
     default:
       return (clean as JobStatus) || 'New';
+  }
+}
+
+/**
+ * Maps any internal or legacy status to Owner-facing clean display terminology
+ */
+export function getOwnerStatusLabel(status?: string, lang: 'en' | 'th' | boolean = 'en'): string {
+  const norm = normalizeJobStatus(status);
+  const isTh = typeof lang === 'boolean' ? lang : lang === 'th';
+  switch (norm) {
+    case 'New':
+      return isTh ? 'งานใหม่' : 'New';
+    case 'Waiting Approval':
+      return isTh ? 'รอลูกค้ายืนยัน' : 'Waiting Approval';
+    case 'Scheduled':
+      return isTh ? 'นัดหมายแล้ว' : 'Scheduled';
+    case 'In Progress':
+      return isTh ? 'กำลังทำ' : 'In Progress';
+    case 'Waiting Customer':
+      return isTh ? 'รอลูกค้า' : 'Waiting Customer';
+    case 'Waiting Vendor':
+      return isTh ? 'รอช่าง' : 'Waiting Vendor';
+    case 'Waiting Payment':
+      return isTh ? 'รอชำระเงิน' : 'Waiting Payment';
+    case 'Completed':
+      return isTh ? 'งานเสร็จ' : 'Completed';
+    case 'Cancelled':
+      return isTh ? 'ยกเลิก' : 'Cancelled';
+    default:
+      return norm;
   }
 }
 
@@ -93,6 +131,7 @@ export interface Customer {
   lastContact: string;
   nextFollowUp?: string;
   followUpNote?: string;
+  isArchived?: boolean; // Soft archive for customer with history
 }
 
 // PTL V2 Property Model
@@ -131,6 +170,7 @@ export interface Property {
   systemsInstalled?: string[]; // Compatibility alias
   lastInspection?: string;
   nextInspection?: string;
+  isArchived?: boolean; // Soft archive for property with history
 }
 
 // Quick Job Service Types
@@ -170,6 +210,10 @@ export interface InspectionItem {
   // Mr. Big AI metadata
   mrBigConfidence?: string;
   mrBigRiskAssessment?: string;
+  // Phase 3.9B.1 Team-Ready Extensions:
+  createdBy?: string;
+  performedBy?: string;
+  actorType?: ActorType;
 }
 
 export interface QuotationHardwareItem {
@@ -236,15 +280,65 @@ export interface InspectionJob {
   notes?: string;
   items: InspectionItem[];
   quotation: QuotationData;
-  // Solo Operator PTL V2 Fields:
+  // Solo Operator PTL V2 & V3 Fields:
   scheduledDate?: string; // e.g. 2026-09-17 or Today
   scheduledTime?: string; // e.g. 10:30 AM
+  scheduledEndTime?: string; // e.g. 11:30 AM
+  appointmentConfirmation?: 'Not Confirmed' | 'Confirmed' | 'Cancelled';
+  scheduleNotes?: string;
+  vendorId?: string; // Links to Vendor.id
+  recurringServiceId?: string; // Links to RecurringService.id
   requestDescription?: string; // Direct request text
   price?: number; // Quick agreed price in THB
   isSimpleJob?: boolean; // If true, lightweight job (inspection is optional)
   waitingOn?: 'customer' | 'vendor' | 'parts' | 'payment' | 'none';
   actionRequired?: string; // e.g. "Invoice needs follow-up", "Confirm appointment tomorrow"
   completedAt?: string;
+  // Phase 3.9 Solo Operator & Home Watch Extensions:
+  parentJobId?: string; // e.g. linked parent Home Watch job when problem discovered
+  waitingReason?: string; // e.g. "Waiting for quotation approval" or "Replacement part ordered"
+  nextFollowUpDate?: string; // YYYY-MM-DD
+  appointmentOutcome?: 'Completed' | 'Rescheduled' | 'Cancelled by Customer' | 'Cancelled by PTL' | 'No Access / No Show';
+  rescheduledFromDate?: string;
+  missedAppointmentFee?: number;
+  materialCostExpected?: number; // Internal expected cost (hidden from customer)
+  materialDepositRequested?: number;
+  materialDepositReceived?: number;
+  // Field Operations: Separate Scheduled Time from Actual Work Time
+  actualStartedAt?: string; // ISO string when work actually commenced
+  actualCompletedAt?: string; // ISO string when work actually completed
+  // Phase 3.9B Solo Operator Service-driven Workflow:
+  workflowPreset?: WorkflowPreset;
+  urgency?: 'Normal' | 'Urgent';
+  visitStartedAt?: string;
+  visitCompletedAt?: string;
+  siteArrivedAt?: string;
+  assignedVendorId?: string;
+  assignedVendorName?: string;
+  vendorPhone?: string;
+  vendorEta?: string;
+  vendorCostEstimate?: number;
+  vendorCostActual?: number;
+  vendorStatus?: 'Waiting Vendor' | 'Vendor Confirmed' | 'Arrived' | 'Completed';
+  beforePhotoUrl?: string;
+  beforeOriginalPhotoUrl?: string;
+  afterPhotoUrl?: string;
+  afterOriginalPhotoUrl?: string;
+  homeWatchChecklist?: HomeWatchChecklistItem[];
+  evidencePhotos?: EvidencePhoto[];
+  siteNotes?: string;
+  // Phase 3.9B.1 Team-Ready Architecture Extensions:
+  executionMode?: ExecutionMode; // Default: 'OWNER'
+  assignedToType?: AssignedToType; // Default: 'OWNER'
+  assignedToId?: string; // Helper ID or Vendor ID
+  assignedAt?: string; // ISO string
+  assignedBy?: string; // e.g. 'PTL Owner'
+  serviceArea?: string; // Flexible operational area label e.g. 'Rawai', 'Bang Tao', 'Chalong'
+  events?: JobEvent[]; // Lightweight business activity log
+  needsOwnerReview?: boolean; // For future delegated helper/vendor verification
+  ownerReviewedAt?: string; // ISO string when owner verified
+  ownerReviewNote?: string; // Owner's review notes
+  lastActivityAt?: string; // Timestamp of latest meaningful work/event
 }
 
 // ====================================================
@@ -279,6 +373,8 @@ export type InvoiceStatus =
   | 'Draft'
   | 'Sent'
   | 'Partially Paid'
+  | 'Deposit Received'
+  | 'Materials Paid'
   | 'Paid'
   | 'Overdue'
   | 'Cancelled';
@@ -292,6 +388,16 @@ export interface InvoiceItem {
   unitPrice?: number;
   amount: number;
   categoryType?: 'Hardware' | 'Service' | 'Fee';
+}
+
+export interface FollowUpHistoryRecord {
+  id: string;
+  date: string; // YYYY-MM-DD
+  method: 'WhatsApp' | 'Phone' | 'Email' | 'In Person' | 'Other';
+  notes: string;
+  promiseDate?: string;
+  promiseAmount?: number;
+  recordedAt: string;
 }
 
 export interface Invoice {
@@ -311,6 +417,32 @@ export interface Invoice {
   amountPaid: number;
   balanceDue: number;
   notes?: string;
+  createdAt: string;
+  // Phase 3.9 Deposit & Debt Follow-up Extensions:
+  depositRequested?: number;
+  depositPaid?: number;
+  depositStatus?: 'None' | 'Requested' | 'Partially Paid' | 'Paid';
+  promiseToPayDate?: string; // YYYY-MM-DD
+  promiseToPayAmount?: number;
+  promiseToPayNotes?: string;
+  lastContactDate?: string;
+  lastContactMethod?: 'WhatsApp' | 'Phone' | 'Email' | 'In Person' | 'Other';
+  customerResponse?: string;
+  nextFollowUpDate?: string;
+  followUpNotes?: string;
+  followUpHistory?: FollowUpHistoryRecord[];
+  snoozedUntil?: string; // YYYY-MM-DD (hide from immediate My Day attention until date)
+}
+
+export interface QuickCaptureItem {
+  id: string;
+  customerName: string;
+  note: string;
+  phone?: string;
+  property?: string;
+  followUpDateTime?: string;
+  convertedToJobId?: string;
+  isCompleted?: boolean;
   createdAt: string;
 }
 
@@ -548,4 +680,229 @@ export function convertJobToRelationalTables(job: InspectionJob): {
     quotationItems,
   };
 }
+
+// ====================================================
+// PHASE 3: SOLO OPERATOR AUTOMATION MODELS
+// ====================================================
+
+export type VendorCategory =
+  | 'Electrician'
+  | 'Plumber'
+  | 'Air Conditioning'
+  | 'CCTV'
+  | 'Internet / WiFi'
+  | 'Locksmith'
+  | 'Cleaner'
+  | 'Handyman'
+  | 'Car / Tire'
+  | 'Pet / Vet'
+  | 'Transport'
+  | 'Other';
+
+export type VendorStatus = 'Active' | 'Backup' | 'Do Not Use';
+
+export interface Vendor {
+  id: string; // VEND-001
+  name: string; // e.g. Somchai Electric
+  companyName?: string; // optional e.g. Somchai Power & Electric
+  category: VendorCategory;
+  phone: string;
+  lineWhatsapp: string;
+  email: string;
+  serviceAreas: string; // e.g. "Rawai / Chalong / Kata"
+  priceNotes: string;
+  reliabilityNotes: string;
+  privateRating: number; // 1-5 (PRIVATE internal information, never display on customer documents)
+  jobsCompleted: number;
+  lastUsed: string; // e.g. "12 Sep 2026" or YYYY-MM-DD
+  paymentNotes: string;
+  status: VendorStatus;
+  createdAt: string;
+}
+
+export type RecurringFrequency =
+  | 'Weekly'
+  | 'Every 2 Weeks'
+  | 'Monthly'
+  | 'Every 2 Months'
+  | 'Quarterly'
+  | 'Custom';
+
+export type RecurringStatus = 'Active' | 'Paused' | 'Cancelled';
+
+export interface HomeWatchVisitScheduleItem {
+  visitNumber: number;
+  scheduledDate: string; // YYYY-MM-DD
+  scheduledTime: string; // e.g. "10:00"
+  status: 'Scheduled' | 'Completed' | 'Upcoming' | 'In Progress';
+  jobId?: string;
+  completedAt?: string;
+  notes?: string;
+}
+
+export interface RecurringService {
+  id: string; // REC-001
+  customerId: string;
+  propertyId: string;
+  propertyName?: string;
+  customerName?: string;
+  title?: string;
+  serviceType: string; // e.g. 'Home Watch', 'Pool Cleaning', 'Air Conditioning'
+  frequency: RecurringFrequency;
+  interval?: number; // custom days if frequency === 'Custom'
+  price: number;
+  lastCompletedDate?: string;
+  nextDueDate: string; // YYYY-MM-DD
+  status: RecurringStatus;
+  notes: string;
+  autoCreateJob: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  // Phase 3.9B.1 Home Watch Package & Schedule Enhancements
+  planType?: 'finite' | 'ongoing';
+  totalVisits?: number; // e.g. 1, 2, 4, 6, 8, 12
+  completedVisits?: number;
+  preferredTime?: string; // e.g. "10:00"
+  visitSchedule?: HomeWatchVisitScheduleItem[];
+}
+
+export type TaskType =
+  | 'invoice_overdue'
+  | 'quote_followup'
+  | 'confirm_appointment'
+  | 'create_invoice'
+  | 'recurring_due'
+  | 'vendor_followup'
+  | 'custom';
+
+export type TaskPriority = 'Low' | 'Normal' | 'High' | 'Urgent';
+
+export type TaskStatus = 'Open' | 'Completed' | 'Dismissed';
+
+export interface Task {
+  id: string; // TASK-001
+  type: TaskType;
+  title: string;
+  description: string;
+  customerId?: string;
+  propertyId?: string;
+  jobId?: string;
+  invoiceId?: string;
+  vendorId?: string;
+  dueDate: string; // YYYY-MM-DD
+  priority: TaskPriority;
+  status: TaskStatus;
+  source: 'system_rule' | 'manual';
+  createdAt: string;
+  completedAt?: string;
+  snoozedUntil?: string; // YYYY-MM-DD
+}
+
+// Alias for Task
+export type FollowUp = Task;
+
+// ====================================================
+// PHASE 3.9B: SOLO OPERATOR SERVICE-DRIVEN WORKFLOWS
+// ====================================================
+
+export type WorkflowPreset =
+  | 'VISIT'
+  | 'ASSISTANCE'
+  | 'TECHNICAL'
+  | 'COORDINATION'
+  | 'GENERAL';
+
+export type HomeWatchChecklistCategory =
+  | 'Access'
+  | 'Electricity'
+  | 'Water'
+  | 'Air Conditioning'
+  | 'Internet / CCTV'
+  | 'Interior'
+  | 'Exterior'
+  | 'Security'
+  | 'General';
+
+export interface HomeWatchChecklistItem {
+  id: string; // e.g. 'hw_access_entry'
+  category: HomeWatchChecklistCategory;
+  title: string;
+  status: 'Normal' | 'Issue' | 'N/A';
+  note?: string;
+  photoUrl?: string;
+  originalPhotoUrl?: string;
+  capturedAt?: string;
+  // Phase 3.9B.1 Team-Ready Extensions:
+  performedBy?: string;
+  actorType?: ActorType;
+  actorId?: string;
+  updatedAt?: string;
+}
+
+export interface EvidencePhoto {
+  id: string;
+  jobId: string;
+  customerId?: string;
+  propertyId?: string;
+  checklistItemId?: string;
+  photoUrl: string; // Display version with timestamp evidence
+  originalPhotoUrl?: string; // Untouched original photo file
+  caption?: string;
+  capturedAt: string; // ISO string
+  itemStatus?: 'Normal' | 'Issue' | 'N/A';
+  category?: string;
+  propertyName?: string;
+  // Phase 3.9B.1 Team-Ready & Proof of Work Extensions:
+  uploadedBy?: string;
+  createdBy?: string;
+  performedBy?: string;
+  actorType?: ActorType;
+  actorId?: string;
+  visitNumber?: number;
+  totalVisits?: number;
+}
+
+// ====================================================
+// PHASE 3.9B.1: TEAM-READY DATA FOUNDATION
+// Solo-First, Team-Ready Architecture
+// ====================================================
+
+export type ExecutionMode =
+  | 'OWNER'
+  | 'PTL_HELPER'
+  | 'VENDOR'
+  | 'VENDOR_WITH_PTL_SUPERVISION'
+  | 'REMOTE';
+
+export type AssignedToType = 'OWNER' | 'HELPER' | 'VENDOR';
+
+export type ActorType = 'OWNER' | 'HELPER' | 'VENDOR' | 'SYSTEM';
+
+export type JobEventType =
+  | 'JOB_CREATED'
+  | 'JOB_ASSIGNED'
+  | 'JOB_STARTED'
+  | 'STATUS_CHANGED'
+  | 'PHOTO_ADDED'
+  | 'CHECKLIST_UPDATED'
+  | 'ISSUE_REPORTED'
+  | 'QUOTE_CREATED'
+  | 'CUSTOMER_APPROVED'
+  | 'PAYMENT_RECORDED'
+  | 'JOB_COMPLETED'
+  | 'JOB_CANCELLED'
+  | 'OWNER_REVIEWED';
+
+export interface JobEvent {
+  id: string; // e.g. EVT-20260919-001
+  jobId: string;
+  eventType: JobEventType;
+  actorType: ActorType;
+  actorId?: string;
+  actorName?: string;
+  createdAt: string; // ISO string
+  summary?: string;
+  metadata?: Record<string, any>;
+}
+
 

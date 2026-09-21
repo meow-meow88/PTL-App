@@ -21,6 +21,9 @@ import {
   Customer,
   Property,
   MainNavTab,
+  Vendor,
+  RecurringService,
+  Task,
 } from './types';
 import {
   sampleJobKMazen,
@@ -45,22 +48,36 @@ import { GoogleDriveModal } from './components/GoogleDriveModal';
 import { BackupRestoreModal } from './components/BackupRestoreModal';
 import { Navigation } from './components/Navigation';
 import { MyDayView } from './components/MyDayView';
+import { JobWorkspaceView } from './components/JobWorkspaceView';
 import { CustomersView } from './components/CustomersView';
 import { PropertiesView } from './components/PropertiesView';
 import { JobsView } from './components/JobsView';
 import { QuickJobModal } from './components/QuickJobModal';
+import { HomeWatchVisitView } from './components/HomeWatchVisitView';
+import { RoadAssistanceWorkflowView } from './components/RoadAssistanceWorkflowView';
+import { FlexibleJobWorkflowView } from './components/FlexibleJobWorkflowView';
+import { getPrimaryJobAction, isHomeWatchService, isRoadsideService } from './utils/serviceWorkflow';
+import { useLanguage } from './i18n/translations';
+import { recordJobActivity } from './utils/jobEvents';
 import { SecondaryViews } from './components/SecondaryViews';
 import { MoneyView } from './components/MoneyView';
 import { JobFinancialModal } from './components/JobFinancialModal';
 import { ExpenseModal } from './components/ExpenseModal';
 import { InvoiceModal } from './components/InvoiceModal';
 import { PaymentModal } from './components/PaymentModal';
+import { VendorModal } from './components/VendorModal';
+import { AssignVendorModal } from './components/AssignVendorModal';
+import { QuickScheduleModal } from './components/QuickScheduleModal';
+import { RecurringServicesModal } from './components/RecurringServicesModal';
+import { EditJobModal } from './components/EditJobModal';
 import {
   loadCustomers,
   saveCustomers,
   loadProperties,
   saveProperties,
   ensureCustomerAndPropertyForJob,
+  deduplicateProperties,
+  deduplicateCustomers,
 } from './utils/crmStorage';
 import { initialCustomersSeed, initialPropertiesSeed } from './data/crmSeedData';
 import {
@@ -73,6 +90,16 @@ import {
   createInvoiceFromJob,
   recordPayment,
 } from './utils/financeStorage';
+import {
+  loadVendors,
+  saveVendors,
+  loadRecurringServices,
+  saveRecurringServices,
+  loadTasks,
+  saveTasks,
+} from './utils/operationsStorage';
+import { initialVendorsSeed, initialRecurringServicesSeed } from './data/operationsSeedData';
+import { generateAutomatedFollowUps } from './utils/followUpEngine';
 import { Expense, Invoice, Payment } from './types';
 import {
   safeGetLocalStorage,
@@ -132,17 +159,65 @@ function sanitizeJob(j: any): InspectionJob {
     customerId: j.customerId,
     propertyId: j.propertyId,
     scheduledDate: j.scheduledDate || j.inspectionDate || 'Today',
-    scheduledTime: j.scheduledTime || '10:00 AM',
+    scheduledTime: j.scheduledTime ? (j.scheduledTime.includes('AM') || j.scheduledTime.includes('PM') ? j.scheduledTime.replace(/AM|PM/gi, '').trim() : j.scheduledTime) : '10:00',
+    scheduledEndTime: j.scheduledEndTime,
+    appointmentConfirmation: j.appointmentConfirmation,
+    scheduleNotes: j.scheduleNotes,
+    actualStartedAt: j.actualStartedAt || j.visitStartedAt,
+    actualCompletedAt: j.actualCompletedAt || j.visitCompletedAt || j.completedAt,
     requestDescription: j.requestDescription || '',
     price: typeof j.price === 'number' ? j.price : undefined,
     isSimpleJob: Boolean(j.isSimpleJob),
     waitingOn: j.waitingOn || (j.status === 'Quoted' ? 'customer' : 'none'),
     actionRequired: j.actionRequired,
     completedAt: j.completedAt,
+    workflowPreset: j.workflowPreset,
+    urgency: j.urgency,
+    parentJobId: j.parentJobId,
+    recurringServiceId: j.recurringServiceId,
+    waitingReason: j.waitingReason,
+    nextFollowUpDate: j.nextFollowUpDate,
+    appointmentOutcome: j.appointmentOutcome,
+    rescheduledFromDate: j.rescheduledFromDate,
+    missedAppointmentFee: j.missedAppointmentFee,
+    materialCostExpected: j.materialCostExpected,
+    materialDepositRequested: j.materialDepositRequested,
+    materialDepositReceived: j.materialDepositReceived,
+    vendorId: j.vendorId,
+    siteNotes: j.siteNotes,
+    homeWatchChecklist: Array.isArray(j.homeWatchChecklist) ? j.homeWatchChecklist : undefined,
+    evidencePhotos: Array.isArray(j.evidencePhotos) ? j.evidencePhotos : undefined,
+    assignedVendorId: j.assignedVendorId,
+    assignedVendorName: j.assignedVendorName,
+    vendorPhone: j.vendorPhone,
+    vendorStatus: j.vendorStatus,
+    vendorEta: j.vendorEta,
+    vendorCostEstimate: j.vendorCostEstimate,
+    siteArrivedAt: j.siteArrivedAt,
+    visitStartedAt: j.visitStartedAt,
+    visitCompletedAt: j.visitCompletedAt,
+    beforePhotoUrl: j.beforePhotoUrl,
+    afterPhotoUrl: j.afterPhotoUrl,
+    beforeOriginalPhotoUrl: j.beforeOriginalPhotoUrl,
+    afterOriginalPhotoUrl: j.afterOriginalPhotoUrl,
+    // Phase 3.9B.1 Team-Ready Foundations:
+    executionMode: j.executionMode || 'OWNER',
+    assignedToType: j.assignedToType || (j.assignedVendorId || j.vendorId ? 'VENDOR' : 'OWNER'),
+    assignedToId: j.assignedToId || j.assignedVendorId || j.vendorId,
+    assignedAt: j.assignedAt,
+    assignedBy: j.assignedBy,
+    serviceArea: j.serviceArea,
+    events: Array.isArray(j.events) ? j.events : [],
+    needsOwnerReview: Boolean(j.needsOwnerReview),
+    ownerReviewedAt: j.ownerReviewedAt,
+    ownerReviewNote: j.ownerReviewNote,
+    lastActivityAt:
+      j.lastActivityAt || j.visitStartedAt || j.actualStartedAt || j.createdAt || new Date().toISOString(),
   };
 }
 
 export default function App() {
+  const { lang, t } = useLanguage();
   const [isHydrated, setIsHydrated] = useState(false);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [lastSyncStatus, setLastSyncStatus] = useState<string>('กำลังตรวจเช็คระบบความปลอดภัย...');
@@ -259,8 +334,8 @@ export default function App() {
         // 4. Hydrate CRM Customers and Properties
         try {
           const [loadedCusts, loadedProps] = await Promise.all([loadCustomers(), loadProperties()]);
-          let workingCusts = loadedCusts.length > 0 ? loadedCusts : initialCustomersSeed;
-          let workingProps = loadedProps.length > 0 ? loadedProps : initialPropertiesSeed;
+          let workingCusts = deduplicateCustomers(loadedCusts.length > 0 ? loadedCusts : initialCustomersSeed);
+          let workingProps = deduplicateProperties(loadedProps.length > 0 ? loadedProps : initialPropertiesSeed);
 
           // Reconcile jobs with CRM
           for (const j of targetJobs) {
@@ -268,6 +343,9 @@ export default function App() {
             workingCusts = syncRes.updatedCustomers;
             workingProps = syncRes.updatedProperties;
           }
+
+          workingCusts = deduplicateCustomers(workingCusts);
+          workingProps = deduplicateProperties(workingProps);
 
           if (isMounted) {
             setCustomers(workingCusts);
@@ -293,6 +371,36 @@ export default function App() {
           }
         } catch (finErr) {
           console.error('Finance load error:', finErr);
+        }
+
+        // 6. Hydrate Phase 3 Operations (Vendors, Recurring Services, Tasks)
+        try {
+          const [loadedVendors, loadedRecurring, loadedTasks] = await Promise.all([
+            loadVendors(),
+            loadRecurringServices(),
+            loadTasks(),
+          ]);
+
+          const workingVendors = loadedVendors;
+          const workingRecurring = loadedRecurring;
+          let workingTasks = loadedTasks;
+
+          // Deterministic task engine: auto-generate follow-up tasks without duplicates
+          const autoTasks = generateAutomatedFollowUps(targetJobs, workingTasks, workingRecurring);
+          if (autoTasks.length > 0) {
+            workingTasks = [...workingTasks, ...autoTasks];
+          }
+
+          if (isMounted) {
+            setVendors(workingVendors);
+            setRecurringServices(workingRecurring);
+            setTasks(workingTasks);
+            saveVendors(workingVendors);
+            saveRecurringServices(workingRecurring);
+            saveTasks(workingTasks);
+          }
+        } catch (opErr) {
+          console.error('Operations load error:', opErr);
         }
       } catch (err) {
         console.error('Durable hydration error:', err);
@@ -321,6 +429,22 @@ export default function App() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
 
+  // Phase 3 Operations State (Vendors, Recurring Services, Follow-up Tasks)
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [recurringServices, setRecurringServices] = useState<RecurringService[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+
+  // Phase 3 Operations Modals State
+  const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
+  const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
+  const [isAssignVendorModalOpen, setIsAssignVendorModalOpen] = useState(false);
+  const [jobForAssignVendor, setJobForAssignVendor] = useState<InspectionJob | null>(null);
+  const [isQuickScheduleModalOpen, setIsQuickScheduleModalOpen] = useState(false);
+  const [jobForQuickSchedule, setJobForQuickSchedule] = useState<InspectionJob | null>(null);
+  const [isEditJobModalOpen, setIsEditJobModalOpen] = useState(false);
+  const [jobForEdit, setJobForEdit] = useState<InspectionJob | null>(null);
+  const [isRecurringModalOpen, setIsRecurringModalOpen] = useState(false);
+
   // Financial Modals State
   const [isJobFinancialModalOpen, setIsJobFinancialModalOpen] = useState(false);
   const [selectedJobIdForFinancials, setSelectedJobIdForFinancials] = useState<string | null>(null);
@@ -338,8 +462,23 @@ export default function App() {
   const [isQuickJobModalOpen, setIsQuickJobModalOpen] = useState(false);
   const [quickJobPresetCustomer, setQuickJobPresetCustomer] = useState<string | null>(null);
   const [quickJobPresetProperty, setQuickJobPresetProperty] = useState<string | null>(null);
+  const [quickJobUrgency, setQuickJobUrgency] = useState<'Normal' | 'Urgent'>('Normal');
   const [selectedCustomerIdForView, setSelectedCustomerIdForView] = useState<string | null>(null);
   const [selectedPropertyIdForView, setSelectedPropertyIdForView] = useState<string | null>(null);
+
+  const handleOpenNormalJob = () => {
+    setQuickJobPresetCustomer(null);
+    setQuickJobPresetProperty(null);
+    setQuickJobUrgency('Normal');
+    setIsQuickJobModalOpen(true);
+  };
+
+  const handleOpenUrgentJob = () => {
+    setQuickJobPresetCustomer(null);
+    setQuickJobPresetProperty(null);
+    setQuickJobUrgency('Urgent');
+    setIsQuickJobModalOpen(true);
+  };
 
   const [isFindingModalOpen, setIsFindingModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InspectionItem | null>(null);
@@ -467,15 +606,20 @@ export default function App() {
     expenses?: Expense[];
     invoices?: Invoice[];
     payments?: Payment[];
+    vendors?: Vendor[];
+    recurringServices?: RecurringService[];
+    tasks?: Task[];
   }) => {
     handleRestoreJobs(payload.jobs, payload.activeJobId);
     if (Array.isArray(payload.customers)) {
-      setCustomers(payload.customers);
-      saveCustomers(payload.customers);
+      const cleanCusts = deduplicateCustomers(payload.customers);
+      setCustomers(cleanCusts);
+      saveCustomers(cleanCusts);
     }
     if (Array.isArray(payload.properties)) {
-      setProperties(payload.properties);
-      saveProperties(payload.properties);
+      const cleanProps = deduplicateProperties(payload.properties);
+      setProperties(cleanProps);
+      saveProperties(cleanProps);
     }
     if (Array.isArray(payload.expenses)) {
       setExpenses(payload.expenses);
@@ -489,9 +633,21 @@ export default function App() {
       setPayments(payload.payments);
       savePayments(payload.payments);
     }
+    if (Array.isArray(payload.vendors)) {
+      setVendors(payload.vendors);
+      saveVendors(payload.vendors);
+    }
+    if (Array.isArray(payload.recurringServices)) {
+      setRecurringServices(payload.recurringServices);
+      saveRecurringServices(payload.recurringServices);
+    }
+    if (Array.isArray(payload.tasks)) {
+      setTasks(payload.tasks);
+      saveTasks(payload.tasks);
+    }
     setToastMessage({
       title: 'Full Backup Restored',
-      subtitle: `Restored ${payload.jobs.length} jobs, CRM & Financial ledgers`,
+      subtitle: `Restored ${payload.jobs.length} jobs, CRM, Operations & Financial ledgers`,
     });
   };
 
@@ -510,18 +666,37 @@ export default function App() {
     });
   };
 
-  const handleSaveProperty = async (updatedProperty: Property) => {
-    setProperties((prev) => {
-      const exists = prev.some((p) => p.id === updatedProperty.id);
-      const next = exists
-        ? prev.map((p) => (p.id === updatedProperty.id ? updatedProperty : p))
-        : [updatedProperty, ...prev];
-      saveProperties(next);
+  const handleDeleteCustomer = (customerId: string) => {
+    setCustomers((prev) => {
+      const next = prev.filter((c) => c.id !== customerId);
+      saveCustomers(next);
       return next;
     });
     setToastMessage({
+      title: 'Customer Deleted',
+      subtitle: 'Customer record was permanently removed',
+    });
+  };
+
+  const handleArchiveCustomer = (cust: Customer) => {
+    const updated = { ...cust, isArchived: !cust.isArchived };
+    handleSaveCustomer(updated);
+  };
+
+  const handleSaveProperty = async (updatedProperty: Property) => {
+    setProperties((prev) => {
+      const cleanPrev = deduplicateProperties(prev);
+      const exists = cleanPrev.some((p) => p.id.toUpperCase() === updatedProperty.id.toUpperCase());
+      const next = exists
+        ? cleanPrev.map((p) => (p.id.toUpperCase() === updatedProperty.id.toUpperCase() ? updatedProperty : p))
+        : [updatedProperty, ...cleanPrev];
+      const cleanNext = deduplicateProperties(next);
+      saveProperties(cleanNext);
+      return cleanNext;
+    });
+    setToastMessage({
       title: 'Property Profile Saved',
-      subtitle: `${updatedProperty.propertyName} updated`,
+      subtitle: `${updatedProperty.propertyName || updatedProperty.name} updated`,
     });
   };
 
@@ -550,6 +725,221 @@ export default function App() {
     } else {
       setActiveTab('jobs');
     }
+  };
+
+  // Phase 3 Operations Handlers
+  const handleSaveVendor = (vendor: Vendor) => {
+    setVendors((prev) => {
+      const idx = prev.findIndex((v) => v.id === vendor.id);
+      let next: Vendor[];
+      if (idx >= 0) {
+        next = [...prev];
+        next[idx] = vendor;
+      } else {
+        next = [vendor, ...prev];
+      }
+      saveVendors(next);
+      return next;
+    });
+    setToastMessage({
+      title: 'Vendor Saved',
+      subtitle: `${vendor.name} (${vendor.category}) updated`,
+    });
+    setIsVendorModalOpen(false);
+    setEditingVendor(null);
+  };
+
+  const handleDeleteVendor = (vendorId: string) => {
+    setVendors((prev) => {
+      const next = prev.filter((v) => v.id !== vendorId);
+      saveVendors(next);
+      return next;
+    });
+    setToastMessage({
+      title: 'Vendor Removed',
+      subtitle: 'Vendor profile was deleted',
+    });
+  };
+
+  const handleAssignVendorToJob = (jobId: string, vendorId: string | undefined) => {
+    const vendorObj = vendors.find((v) => v.id === vendorId);
+    const now = new Date().toISOString();
+    setJobsList((prev) => {
+      const next = prev.map((j) => {
+        if (j.id === jobId) {
+          const newStatus = vendorId && (j.status === 'Approved' || j.status === 'New') ? ('Waiting Vendor' as const) : j.status;
+          let updated: InspectionJob = {
+            ...j,
+            vendorId: vendorId || undefined,
+            assignedVendorId: vendorId || undefined,
+            vendorName: vendorObj?.name || (vendorId ? j.vendorName : undefined),
+            assignedVendorName: vendorObj?.name || (vendorId ? j.assignedVendorName : undefined),
+            waitingOn: vendorId ? ('vendor' as const) : j.waitingOn,
+            status: newStatus,
+            assignedToType: vendorId ? 'VENDOR' : 'OWNER',
+            assignedToId: vendorId || undefined,
+            assignedAt: vendorId ? now : j.assignedAt,
+            assignedBy: j.assignedBy || 'PTL Owner',
+            executionMode: vendorId ? 'VENDOR' : (j.executionMode === 'VENDOR' ? 'OWNER' : j.executionMode || 'OWNER'),
+            lastActivityAt: now,
+          };
+          return recordJobActivity(updated, 'JOB_ASSIGNED', {
+            summary: vendorObj ? `Assigned to ${vendorObj.name}` : 'Assigned to PTL Owner',
+            metadata: { vendorId, vendorName: vendorObj?.name },
+          });
+        }
+        return j;
+      });
+      idbSet('ptl_jobs_archive', next);
+      safeSetLocalStorage('ptl_jobs_archive', JSON.stringify(next));
+      saveLocalSnapshot(next, activeJobId);
+      return next;
+    });
+
+    setToastMessage({
+      title: 'Vendor Assignment Updated',
+      subtitle: vendorObj ? `Assigned to ${vendorObj.name}` : 'Vendor unassigned',
+    });
+    setIsAssignVendorModalOpen(false);
+    setJobForAssignVendor(null);
+  };
+
+  const handleSaveQuickSchedule = (
+    jobId: string,
+    scheduleData: {
+      scheduledDate: string;
+      scheduledTime: string;
+      scheduledEndTime?: string;
+      scheduleNotes?: string;
+      vendorId?: string;
+      appointmentConfirmation: 'Not Confirmed' | 'Confirmed' | 'Cancelled';
+    }
+  ) => {
+    const vendorObj = vendors.find((v) => v.id === scheduleData.vendorId);
+    const now = new Date().toISOString();
+    setJobsList((prev) => {
+      const next = prev.map((j) => {
+        if (j.id === jobId) {
+          const statusChanged = j.status === 'New';
+          const newStatus = statusChanged ? ('Scheduled' as const) : j.status;
+          let updated: InspectionJob = {
+            ...j,
+            scheduledDate: scheduleData.scheduledDate,
+            scheduledTime: scheduleData.scheduledTime,
+            scheduledEndTime: scheduleData.scheduledEndTime,
+            scheduleNotes: scheduleData.scheduleNotes,
+            vendorId: scheduleData.vendorId || j.vendorId,
+            assignedVendorId: scheduleData.vendorId || j.assignedVendorId,
+            vendorName: vendorObj?.name || j.vendorName,
+            assignedVendorName: vendorObj?.name || j.assignedVendorName,
+            isConfirmed: scheduleData.appointmentConfirmation === 'Confirmed',
+            appointmentConfirmation: scheduleData.appointmentConfirmation,
+            status: newStatus,
+            lastActivityAt: now,
+          };
+          if (statusChanged) {
+            updated = recordJobActivity(updated, 'STATUS_CHANGED', {
+              summary: `Scheduled appointment for ${scheduleData.scheduledDate} ${scheduleData.scheduledTime}`,
+              metadata: { from: j.status, to: newStatus },
+            });
+          }
+          return updated;
+        }
+        return j;
+      });
+      idbSet('ptl_jobs_archive', next);
+      safeSetLocalStorage('ptl_jobs_archive', JSON.stringify(next));
+      saveLocalSnapshot(next, activeJobId);
+      return next;
+    });
+
+    setToastMessage({
+      title: 'Schedule Updated',
+      subtitle: `${scheduleData.scheduledDate} at ${scheduleData.scheduledTime} (${scheduleData.appointmentConfirmation})`,
+    });
+    setIsQuickScheduleModalOpen(false);
+    setJobForQuickSchedule(null);
+  };
+
+  const handleConfirmAppointment = (jobId: string) => {
+    const now = new Date().toISOString();
+    setJobsList((prev) => {
+      const next = prev.map((j) => {
+        if (j.id === jobId) {
+          let updated: InspectionJob = {
+            ...j,
+            isConfirmed: true,
+            appointmentConfirmation: 'Confirmed' as const,
+            lastActivityAt: now,
+          };
+          return recordJobActivity(updated, 'CUSTOMER_APPROVED', {
+            summary: 'Appointment confirmed with customer',
+          });
+        }
+        return j;
+      });
+      idbSet('ptl_jobs_archive', next);
+      safeSetLocalStorage('ptl_jobs_archive', JSON.stringify(next));
+      saveLocalSnapshot(next, activeJobId);
+      return next;
+    });
+
+    setToastMessage({
+      title: 'Appointment Confirmed',
+      subtitle: 'Marked as confirmed on schedule',
+    });
+  };
+
+  const handleOpenEditJob = (targetJob: InspectionJob) => {
+    setJobForEdit(targetJob);
+    setIsEditJobModalOpen(true);
+  };
+
+  const handleSaveEditedJob = (updatedJob: InspectionJob) => {
+    setJobsList((prev) => {
+      const next = prev.map((j) => (j.id === updatedJob.id ? updatedJob : j));
+      idbSet('ptl_jobs_archive', next);
+      safeSetLocalStorage('ptl_jobs_archive', JSON.stringify(next));
+      saveLocalSnapshot(next, activeJobId);
+      return next;
+    });
+    setIsEditJobModalOpen(false);
+    setJobForEdit(null);
+    setToastMessage({
+      title: 'Job Updated',
+      subtitle: `${updatedJob.villaName} details updated`,
+    });
+  };
+
+  const handleSaveRecurringService = (service: RecurringService) => {
+    setRecurringServices((prev) => {
+      const idx = prev.findIndex((s) => s.id === service.id);
+      let next: RecurringService[];
+      if (idx >= 0) {
+        next = [...prev];
+        next[idx] = service;
+      } else {
+        next = [service, ...prev];
+      }
+      saveRecurringServices(next);
+      return next;
+    });
+    setToastMessage({
+      title: 'Recurring Plan Saved',
+      subtitle: `${service.serviceType} (${service.frequency}) updated`,
+    });
+  };
+
+  const handleDeleteRecurringService = (serviceId: string) => {
+    setRecurringServices((prev) => {
+      const next = prev.filter((s) => s.id !== serviceId);
+      saveRecurringServices(next);
+      return next;
+    });
+    setToastMessage({
+      title: 'Recurring Plan Removed',
+      subtitle: 'Plan removed from schedule',
+    });
   };
 
   // Auto-dismiss toast after 4.5 seconds
@@ -637,6 +1027,96 @@ export default function App() {
       safeSetLocalStorage('ptl_jobs_archive', JSON.stringify(nextList));
       saveLocalSnapshot(nextList, job.id);
       return nextList;
+    });
+  };
+
+  const handleCreateFollowupJob = (
+    parentJob: InspectionJob,
+    issueNote: string,
+    checklistItem: any
+  ) => {
+    const today = new Date();
+    const dateSlug = today.toISOString().slice(0, 10).replace(/-/g, '');
+    const randomSuffix = Math.floor(100 + Math.random() * 900);
+    const newJobId = `PTL-JOB-${dateSlug}-${randomSuffix}`;
+    const itemTitle = checklistItem?.title || checklistItem?.item || 'Follow-up';
+
+    const newFollowupJob: InspectionJob = {
+      id: newJobId,
+      parentJobId: parentJob.id,
+      clientId: parentJob.clientId || `CL-${randomSuffix}`,
+      customerId: parentJob.customerId,
+      propertyId: parentJob.propertyId,
+      villaName: parentJob.villaName,
+      customerName: parentJob.customerName,
+      customerGroup: parentJob.customerGroup,
+      propertyLocation: parentJob.propertyLocation,
+      serviceArea: parentJob.serviceArea,
+      executionMode: 'OWNER',
+      assignedToType: 'OWNER',
+      assignedBy: 'PTL Owner',
+      assignedAt: today.toISOString(),
+      serviceType: 'Vendor Coordination',
+      status: 'Scheduled',
+      inspectionDate: today.toISOString().slice(0, 10),
+      createdAt: today.toISOString(),
+      lastActivityAt: today.toISOString(),
+      events: [
+        {
+          id: `EVT-${dateSlug}-${randomSuffix}-01`,
+          jobId: newJobId,
+          eventType: 'JOB_CREATED',
+          actorType: 'OWNER',
+          actorName: 'PTL Owner',
+          createdAt: today.toISOString(),
+          summary: `Follow-up created from ${parentJob.id} (${itemTitle})`,
+        },
+      ],
+      inspector: 'PTL Solo Operator',
+      documentRef: `PTL-${dateSlug}`,
+      notes: `Follow-up from Home Watch (${itemTitle}): ${issueNote}`,
+      requestDescription: `Follow-up from Home Watch (${itemTitle}): ${issueNote}`,
+      price: 2500,
+      scheduledDate: today.toISOString().slice(0, 10),
+      scheduledTime: '10:00',
+      waitingOn: 'vendor',
+      isSimpleJob: true,
+      workflowPreset: 'COORDINATION',
+      items: [],
+      quotation: {
+        refNo: `QT-${dateSlug}-${randomSuffix}`,
+        date: today.toLocaleDateString('en-GB'),
+        inspectionRef: newJobId,
+        validity: '30 days',
+        paymentTerm: 'Payment due upon completion.',
+        hardwareItems: [],
+        serviceItems: [
+          {
+            item: 1,
+            description: `Follow-up Repair: ${itemTitle}`,
+            detail: issueNote,
+            estimatedSchedule: 'Scheduled',
+            qty: '1 Job',
+            amount: 2500,
+          },
+        ],
+        procurementFeeRate: 0.15,
+        terms: ['Payment due upon completion.'],
+        contingencies: [],
+        depositPercent: 50,
+      },
+    };
+
+    setJobsList((prev) => {
+      const updated = [newFollowupJob, ...prev];
+      idbSet('ptl_jobs_archive', updated);
+      safeSetLocalStorage('ptl_jobs_archive', JSON.stringify(updated));
+      return updated;
+    });
+
+    setToastMessage({
+      title: lang === 'th' ? 'สร้างงานแก้ไขต่อเนื่องเรียบร้อย' : 'Follow-up Job Created',
+      subtitle: `${checklistItem.title}: ${issueNote.slice(0, 40)}`,
     });
   };
 
@@ -995,11 +1475,8 @@ export default function App() {
             setSelectedCustomerIdForView(null);
             setSelectedPropertyIdForView(null);
           }}
-          onOpenQuickJob={() => {
-            setQuickJobPresetCustomer(null);
-            setQuickJobPresetProperty(null);
-            setIsQuickJobModalOpen(true);
-          }}
+          onOpenQuickJob={handleOpenNormalJob}
+          onOpenUrgentJob={handleOpenUrgentJob}
           onOpenMollyExpress={() => setIsMollyExpressOpen(true)}
           onOpenBackupModal={() => setIsBackupModalOpen(true)}
           onOpenGoogleDrive={() => setIsGoogleDriveModalOpen(true)}
@@ -1044,6 +1521,9 @@ export default function App() {
               customers={customers}
               properties={properties}
               invoices={invoices}
+              vendors={vendors}
+              recurringServices={recurringServices}
+              tasks={tasks}
               onOpenJobInspection={(jobId) => {
                 setActiveJobId(jobId);
                 setPreviousViewMode('main');
@@ -1054,7 +1534,8 @@ export default function App() {
                 setPreviousViewMode('main');
                 setViewMode('report');
               }}
-              onOpenQuickJob={() => setIsQuickJobModalOpen(true)}
+              onOpenQuickJob={handleOpenNormalJob}
+              onOpenUrgentJob={handleOpenUrgentJob}
               onSelectCustomer={(custId) => {
                 setSelectedCustomerIdForView(custId);
                 setActiveTab('customers');
@@ -1069,6 +1550,17 @@ export default function App() {
                   prev.map((j) => (j.id === jobId ? { ...j, status: newStatus } : j))
                 );
               }}
+              onOpenAssignVendorModal={(job) => {
+                setJobForAssignVendor(job);
+                setIsAssignVendorModalOpen(true);
+              }}
+              onOpenScheduleModal={(job) => {
+                setJobForQuickSchedule(job);
+                setIsQuickScheduleModalOpen(true);
+              }}
+              onOpenRecurringModal={() => setIsRecurringModalOpen(true)}
+              onConfirmAppointment={handleConfirmAppointment}
+              onOpenEditJob={handleOpenEditJob}
             />
           )}
 
@@ -1077,7 +1569,11 @@ export default function App() {
               customers={customers}
               properties={properties}
               jobs={jobsList}
+              invoices={invoices}
+              recurringServices={recurringServices}
               onSaveCustomer={handleSaveCustomer}
+              onDeleteCustomer={handleDeleteCustomer}
+              onArchiveCustomer={handleArchiveCustomer}
               onOpenQuickJobForCustomer={(cust) => {
                 setQuickJobPresetCustomer(cust.id);
                 setIsQuickJobModalOpen(true);
@@ -1101,6 +1597,8 @@ export default function App() {
               properties={properties}
               customers={customers}
               jobs={jobsList}
+              recurringServices={recurringServices}
+              onSaveRecurringService={handleSaveRecurringService}
               onSaveProperty={handleSaveProperty}
               onOpenQuickJobForProperty={(prop) => {
                 setQuickJobPresetProperty(prop.id);
@@ -1127,6 +1625,7 @@ export default function App() {
               expenses={expenses}
               invoices={invoices}
               payments={payments}
+              vendors={vendors}
               onOpenQuickJob={() => setIsQuickJobModalOpen(true)}
               onOpenJobInspection={(jobId) => {
                 setActiveJobId(jobId);
@@ -1151,6 +1650,16 @@ export default function App() {
               onOpenFinancials={handleOpenFinancials}
               onOpenAddExpense={handleOpenAddExpense}
               onCreateInvoice={handleCreateInvoiceForJob}
+              onOpenAssignVendorModal={(job) => {
+                setJobForAssignVendor(job);
+                setIsAssignVendorModalOpen(true);
+              }}
+              onOpenScheduleModal={(job) => {
+                setJobForQuickSchedule(job);
+                setIsQuickScheduleModalOpen(true);
+              }}
+              onConfirmAppointment={handleConfirmAppointment}
+              onOpenEditJob={handleOpenEditJob}
             />
           )}
 
@@ -1177,6 +1686,11 @@ export default function App() {
             <SecondaryViews
               tab={activeTab}
               jobs={jobsList}
+              vendors={vendors}
+              recurringServices={recurringServices}
+              tasks={tasks}
+              properties={properties}
+              customers={customers}
               onOpenJobReport={(jobId) => {
                 setActiveJobId(jobId);
                 setPreviousViewMode('main');
@@ -1187,6 +1701,11 @@ export default function App() {
                 setPreviousViewMode('main');
                 setViewMode('report');
               }}
+              onOpenJobInspection={(jobId) => {
+                setActiveJobId(jobId);
+                setPreviousViewMode('main');
+                setViewMode('inspection');
+              }}
               onOpenBackupModal={() => setIsBackupModalOpen(true)}
               onOpenGoogleDrive={() => setIsGoogleDriveModalOpen(true)}
               onOpenDashboard={() => {
@@ -1194,6 +1713,15 @@ export default function App() {
                 setViewMode('dashboard');
               }}
               onOpenMollyExpress={() => setIsMollyExpressOpen(true)}
+              onSaveVendor={handleSaveVendor}
+              onOpenScheduleModal={(job) => {
+                setJobForQuickSchedule(job);
+                setIsQuickScheduleModalOpen(true);
+              }}
+              onOpenProperty={(propId) => {
+                setSelectedPropertyIdForView(propId);
+                setActiveTab('properties');
+              }}
             />
           )}
         </main>
@@ -1204,12 +1732,14 @@ export default function App() {
             setIsQuickJobModalOpen(false);
             setQuickJobPresetCustomer(null);
             setQuickJobPresetProperty(null);
+            setQuickJobUrgency('Normal');
           }}
           customers={customers}
           properties={properties}
           onSaveJob={handleSaveQuickJob}
           presetCustomerId={quickJobPresetCustomer}
           presetPropertyId={quickJobPresetProperty}
+          initialUrgency={quickJobUrgency}
         />
 
         {/* Phase 2 Financial Modals */}
@@ -1293,6 +1823,9 @@ export default function App() {
             expenses={expenses}
             invoices={invoices}
             payments={payments}
+            vendors={vendors}
+            recurringServices={recurringServices}
+            tasks={tasks}
             onRestoreJobs={handleRestoreJobs}
             onRestoreAllData={handleRestoreAllData}
             onForceSaveToServer={handleForceSaveToServer}
@@ -1314,27 +1847,161 @@ export default function App() {
             }}
           />
         )}
+
+        {/* Phase 3 Operations Modals */}
+        {isVendorModalOpen && (
+          <VendorModal
+            isOpen={isVendorModalOpen}
+            onClose={() => {
+              setIsVendorModalOpen(false);
+              setEditingVendor(null);
+            }}
+            onSave={handleSaveVendor}
+            vendorToEdit={editingVendor}
+          />
+        )}
+
+        {isAssignVendorModalOpen && jobForAssignVendor && (
+          <AssignVendorModal
+            isOpen={isAssignVendorModalOpen}
+            job={jobForAssignVendor}
+            vendors={vendors}
+            onClose={() => {
+              setIsAssignVendorModalOpen(false);
+              setJobForAssignVendor(null);
+            }}
+            onAssignVendor={handleAssignVendorToJob}
+          />
+        )}
+
+        {isQuickScheduleModalOpen && jobForQuickSchedule && (
+          <QuickScheduleModal
+            isOpen={isQuickScheduleModalOpen}
+            job={jobForQuickSchedule}
+            vendors={vendors}
+            onClose={() => {
+              setIsQuickScheduleModalOpen(false);
+              setJobForQuickSchedule(null);
+            }}
+            onSaveSchedule={handleSaveQuickSchedule}
+          />
+        )}
+
+        {isRecurringModalOpen && (
+          <RecurringServicesModal
+            isOpen={isRecurringModalOpen}
+            onClose={() => setIsRecurringModalOpen(false)}
+            recurringServices={recurringServices}
+            customers={customers}
+            properties={properties}
+            onSaveService={handleSaveRecurringService}
+            onDeleteService={handleDeleteRecurringService}
+          />
+        )}
+
+        {isEditJobModalOpen && jobForEdit && (
+          <EditJobModal
+            isOpen={isEditJobModalOpen}
+            job={jobForEdit}
+            vendors={vendors}
+            customers={customers}
+            properties={properties}
+            onClose={() => {
+              setIsEditJobModalOpen(false);
+              setJobForEdit(null);
+            }}
+            onSaveJob={handleSaveEditedJob}
+          />
+        )}
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col font-sans pb-24 sm:pb-16 w-full max-w-full overflow-x-hidden">
-      {/* Header */}
-      <Header
+    <div className="min-h-screen bg-slate-100 flex flex-col font-sans w-full max-w-full overflow-x-hidden">
+      <JobWorkspaceView
         job={job}
-        totalJobsCount={jobsList.length}
-        lastSyncStatus={lastSyncStatus}
+        jobsList={jobsList}
+        customers={customers}
+        properties={properties}
+        vendors={vendors}
+        invoices={invoices}
+        expenses={expenses}
         onBackToMain={() => setViewMode('main')}
+        onSelectJob={handleSelectJob}
+        onUpdateJob={updateCurrentJob}
+        onOpenQuickJob={handleOpenNormalJob}
+        onOpenUrgentJob={handleOpenUrgentJob}
         onOpenMultiJob={() => setIsMultiJobModalOpen(true)}
-        onOpenNewJob={() => setIsNewJobModalOpen(true)}
-        onOpenDashboard={() => setViewMode('dashboard')}
-        onOpenVarvaraSocial={() => setIsVarvaraSocialOpen(true)}
-        onOpenMollyHardware={() => setIsMollyHardwareOpen(true)}
-        onOpenMollyExpress={() => setIsMollyExpressOpen(true)}
-        onOpenMobileGuide={() => setIsMobileGuideOpen(true)}
-        onOpenGoogleDrive={() => setIsGoogleDriveModalOpen(true)}
-        onOpenBackupModal={() => setIsBackupModalOpen(true)}
+        onOpenReport={() => {
+          setPreviousViewMode('inspection');
+          setViewMode('report');
+        }}
+        onOpenQuotation={(jobId) => {
+          setActiveJobId(jobId);
+          setPreviousViewMode('inspection');
+          setViewMode('report');
+        }}
+        onOpenQuickEstimate={() => setIsQuickEstimateOpen(true)}
+        onOpenFindingModal={(item) => {
+          setEditingItem(item || null);
+          setIsFindingModalOpen(true);
+        }}
+        onDeleteFinding={handleDeleteFinding}
+        onAddExpense={(jobId) => handleOpenAddExpense(jobId)}
+        onRecordPayment={(jobId, amt) => {
+          let matchingInv = invoices.find((i) => i.jobId === jobId);
+          if (!matchingInv) {
+            matchingInv = createInvoiceFromJob(job, invoices);
+            setInvoices((prev) => [matchingInv!, ...prev]);
+          }
+          handleRecordPayment({
+            invoiceId: matchingInv.id,
+            jobId,
+            customerId: job.customerId || 'CUST-WALKIN',
+            amount: amt,
+            paymentMethod: 'PromptPay',
+            date: new Date().toISOString().slice(0, 10),
+            notes: `${job.serviceType} payment collected`,
+          });
+          updateCurrentJob((prev) => ({
+            ...prev,
+            price: amt,
+            status: 'Paid',
+          }));
+          setToastMessage({
+            title: lang === 'th' ? 'บันทึกการรับเงินสำเร็จ' : 'Payment Recorded',
+            subtitle: `฿${amt.toLocaleString()} THB`,
+          });
+        }}
+        onAssignVendor={(vendor) => {
+          updateCurrentJob((prev) => ({
+            ...prev,
+            assignedVendorId: vendor.id,
+            assignedVendorName: vendor.name,
+            vendorPhone: vendor.phone,
+            vendorStatus: 'Vendor Confirmed',
+          }));
+          setToastMessage({
+            title: lang === 'th' ? 'มอบหมายช่าง/ร้านสำเร็จ' : 'Vendor Assigned',
+            subtitle: `${vendor.name} (${vendor.category})`,
+          });
+        }}
+        onCompleteJob={() => {
+          updateCurrentJob((prev) => ({
+            ...prev,
+            status: 'Completed',
+            completedAt: new Date().toISOString(),
+          }));
+          setToastMessage({
+            title: lang === 'th' ? 'บันทึกปิดงานเสร็จสมบูรณ์' : 'Job Completed',
+            subtitle: `${job.serviceType} - ${job.villaName}`,
+          });
+        }}
+        onCreateFollowupJob={(parentJob, issueNote, checklistItem) => {
+          handleCreateFollowupJob(parentJob, issueNote, checklistItem);
+        }}
+        onDeleteJob={handleDeleteJob}
       />
 
       {/* Floating Dynamic Toast Notification (Mobile & Desktop) */}
@@ -1360,329 +2027,22 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Content Area */}
-      <main className="max-w-4xl mx-auto w-full px-3.5 sm:px-6 py-4 sm:py-5 flex-1 min-w-0">
-        {/* Today's Multi-Site Itinerary Banner */}
-        <div className="bg-white rounded-2xl p-3 sm:p-4 border border-blue-200 shadow-xs mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-blue-50/70 to-slate-50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#102a4e] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
-              <Building2 className="w-5 h-5 text-sky-300" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold text-blue-900 uppercase tracking-wider">
-                  สถานที่ตรวจปัจจุบัน:
-                </span>
-                <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.2 rounded-full">
-                  งานที่ {jobsList.findIndex((j) => j.id === job.id) + 1} จาก {jobsList.length} หลังวันนี้
-                </span>
-              </div>
-              <div className="text-sm sm:text-base font-extrabold text-slate-900 truncate">
-                {job.villaName}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => setIsMultiJobModalOpen(true)}
-              className="inline-flex items-center gap-1.5 text-xs bg-[#102a4e] hover:bg-blue-900 text-white font-bold px-3.5 py-2 rounded-xl transition-all shadow-xs"
-            >
-              <Building2 className="w-3.5 h-3.5 text-sky-300" />
-              <span>สลับวิลล่า ({jobsList.length} หลัง)</span>
-            </button>
-
-            <button
-              onClick={() => setIsQuickEstimateOpen(true)}
-              className="inline-flex items-center gap-1.5 text-xs bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-3.5 py-2 rounded-xl transition-all shadow-xs"
-            >
-              <Zap className="w-3.5 h-3.5 text-slate-950" />
-              <span>+ ประเมินเพิ่มด่วน</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Customer & Location Banner */}
-        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs mb-4 sm:mb-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-1">
-                <span className="p-1 bg-blue-50 text-blue-700 rounded-md">
-                  <User className="w-3.5 h-3.5" />
-                </span>
-                <span className="text-xs text-slate-500 font-medium">ลูกค้า / Customer:</span>
-                <span className="font-bold text-slate-900 text-sm truncate">{job.customerName}</span>
-                <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-semibold border border-slate-200">
-                  {job.customerGroup === 'villa_owner'
-                    ? 'Villa Owner'
-                    : job.customerGroup === 'expat'
-                    ? 'Expat'
-                    : 'Rental/Airbnb'}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-1.5 text-xs text-slate-600 min-w-0">
-                <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span className="truncate">{job.propertyLocation}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => setIsNewJobModalOpen(true)}
-                className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold px-3 py-1.5 rounded-xl transition-colors"
-              >
-                + เริ่มงานตรวจใหม่
-              </button>
-              <button
-                onClick={handleResetToSample}
-                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
-                title="โหลดตัวอย่างเดิม 3 หลัง"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-3 text-xs text-slate-600">
-            <div className="flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-slate-400" />
-              <span className="truncate font-medium text-slate-800">{job.serviceType}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-slate-400" />
-              <span>{job.inspectionDate}</span>
-            </div>
-            <div className="col-span-2 sm:col-span-1 text-slate-500 text-[11px] flex items-center justify-start sm:justify-end">
-              <span>{job.items.length} รายการที่บันทึกแล้ว</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Company Dashboard Shortcut Card */}
-        <div className="mb-4 bg-gradient-to-r from-amber-500/10 via-sky-500/10 to-blue-500/10 border border-amber-300/60 rounded-2xl p-3 sm:p-3.5 flex items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="w-8 h-8 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center font-bold text-sm shrink-0">
-              📊
-            </span>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-black text-slate-900">
-                  แดชบอร์ดบริษัท &amp; ติดตามงาน
-                </span>
-                <span className="text-[10px] bg-amber-400 text-slate-950 font-bold px-1.5 py-0.2 rounded-full">
-                  AI Emily
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-600 truncate">
-                ดูรายรับ-รายจ่าย-กำไร • ยอดค้างชำระ • ปฏิทินนัดหมาย • ลิสต์งานที่ต้องตาม
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={() => setViewMode('dashboard')}
-            className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs px-3.5 py-2 rounded-xl transition-all shadow-xs shrink-0 flex items-center gap-1 cursor-pointer"
-          >
-            <span>เปิดแดชบอร์ด</span>
-            <span>&rarr;</span>
-          </button>
-        </div>
-
-        {/* Quick Quotation Ready Alert Banner */}
-        {job.quotation && job.quotation.hardwareItems && job.quotation.hardwareItems.length > 0 && (
-          <div className="mb-4 bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-800 text-white rounded-2xl p-3.5 sm:p-4 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-emerald-400/40 animate-in fade-in duration-300">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-white/15 text-white flex items-center justify-center shrink-0 border border-white/20 shadow-inner">
-                <FileText className="w-5 h-5 text-emerald-200" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] font-extrabold text-emerald-200 uppercase tracking-wider">
-                    ⚡ ใบเสนอราคาด่วนพร้อมออก PDF (Molly Sourcing)
-                  </span>
-                  <span className="text-[10px] bg-emerald-950/60 text-emerald-300 px-2 py-0.2 rounded-full font-mono font-semibold border border-emerald-400/30">
-                    {job.quotation.refNo}
-                  </span>
-                </div>
-                <div className="text-sm sm:text-base font-black text-white truncate mt-0.5">
-                  ลูกค้า: {job.customerName} • ยอดรวม ฿{(
-                    job.quotation.hardwareItems.reduce((s, it) => s + it.amount, 0) +
-                    (job.quotation.serviceItems?.reduce((s, it) => s + it.amount, 0) || 0)
-                  ).toLocaleString()} THB (อุปกรณ์ ฿2,390 + ค่าแรง ฿700)
-                </div>
-              </div>
-            </div>
-            <button
-              onClick={() => setViewMode('report')}
-              className="bg-white hover:bg-emerald-50 text-emerald-950 font-black px-4 py-2.5 rounded-xl text-xs sm:text-sm shadow-md transition-all shrink-0 flex items-center justify-center gap-2 cursor-pointer active:scale-95"
-            >
-              <FileText className="w-4 h-4 text-emerald-700" />
-              <span>เปิดดูใบเสนอราคา &amp; โหลด PDF</span>
-              <span className="text-emerald-700">&rarr;</span>
-            </button>
-          </div>
-        )}
-
-        {/* Primary Action Buttons Bar - 3 Key Workflow Buttons */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-          <button
-            onClick={() => {
-              setEditingItem(null);
-              setIsFindingModalOpen(true);
-            }}
-            className="bg-[#102a4e] hover:bg-blue-900 text-white font-bold py-3.5 px-3 rounded-xl text-xs sm:text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <Camera className="w-4 h-4 text-sky-300" />
-            <span>1. ถ่ายรูป / จุดที่ตรวจพบ</span>
-          </button>
-
-          <button
-            onClick={() => setIsQuickEstimateOpen(true)}
-            className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-3.5 px-3 rounded-xl text-xs sm:text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <Zap className="w-4 h-4 text-slate-950" />
-            <span>2. แจ้งประเมินราคาเพิ่มด่วน</span>
-          </button>
-
-          <button
-            onClick={() => setViewMode('report')}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 px-3 rounded-xl text-xs sm:text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <FileText className="w-4 h-4 text-emerald-200" />
-            <span>3. ดูเอกสาร &amp; ออก PDF 3 ใบ</span>
-          </button>
-        </div>
-
-        {/* Summary Stats Chips */}
-        <div className="flex flex-wrap items-center gap-2 mb-4 text-xs">
-          <span className="font-semibold text-slate-700 text-xs">สถานะรวมของ {job.villaName}:</span>
-          <span className="bg-white border border-slate-200 px-2.5 py-1 rounded-lg text-slate-700 font-medium">
-            ทั้งหมด {job.items.length} จุด
-          </span>
-          <span className="bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg text-emerald-700 font-medium">
-            ปกติ {normalCount} จุด
-          </span>
-          <span className="bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg text-amber-800 font-medium">
-            ต้องซ่อม / เปลี่ยน {issueCount} จุด
-          </span>
-          {criticalCount > 0 && (
-            <span className="bg-red-50 border border-red-200 px-2.5 py-1 rounded-lg text-red-700 font-medium flex items-center gap-1">
-              <AlertTriangle className="w-3 h-3 text-red-600" />
-              <span>วิกฤต/ไฟตัด {criticalCount} จุด</span>
-            </span>
-          )}
-        </div>
-
-        {/* Findings List */}
-        {job.items.length === 0 ? (
-          <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-6 sm:p-8 text-center my-4 sm:my-6">
-            <Camera className="w-10 h-10 text-slate-400 mx-auto mb-2" />
-            <h3 className="text-sm font-bold text-slate-800 mb-1">
-              ยังไม่มีรายการที่บันทึกใน {job.villaName}
-            </h3>
-            <p className="text-xs text-slate-500 mb-4 max-w-sm mx-auto">
-              กดปุ่มด้านล่างเพื่อถ่ายรูปหน้างาน หรือกดปุ่มโหลดจุดตรวจตัวอย่างเพื่อทดสอบระบบออกรายงานและใบแจ้งหนี้ได้ทันที
-            </p>
-            <div className="flex flex-wrap items-center justify-center gap-2.5">
-              <button
-                onClick={() => {
-                  setEditingItem(null);
-                  setIsFindingModalOpen(true);
-                }}
-                className="inline-flex items-center gap-1.5 bg-[#102a4e] text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-blue-900 transition-colors shadow-xs"
-              >
-                <Plus className="w-4 h-4" />
-                <span>+ เพิ่มจุดตรวจหน้างานจริง</span>
-              </button>
-              <button
-                onClick={handlePopulateStarterItems}
-                className="inline-flex items-center gap-1.5 bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-amber-100 transition-colors shadow-xs"
-              >
-                <Zap className="w-4 h-4 text-amber-600" />
-                <span>⚡ โหลด 2 จุดตรวจตัวอย่าง (สำหรับทดสอบพิมพ์ PDF)</span>
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {job.items.map((item, idx) => (
-              <FindingCard
-                key={item.id}
-                item={item}
-                index={idx}
-                onEdit={(targetItem) => {
-                  setEditingItem(targetItem);
-                  setIsFindingModalOpen(true);
-                }}
-                onDelete={handleDeleteFinding}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Quick Help Tip callout */}
-        <div className="mt-8 bg-sky-50 border border-sky-200/70 rounded-xl p-3.5 flex items-center gap-3 text-xs text-slate-700">
-          <Info className="w-4 h-4 text-blue-600 shrink-0" />
-          <div className="flex-1 text-[11px] text-slate-600">
-            <strong className="text-sky-950 font-semibold">ขั้นตอนมาตรฐาน: </strong>
-            ตรวจหน้างาน &rarr; บันทึกภาพถ่าย &rarr; Molly คำนวณราคา &rarr; กดสร้างเอกสาร PDF 3 ใบส่งลูกค้าได้ทันที
-          </div>
-        </div>
-      </main>
-
-      {/* Floating Bottom Action Bar for Mobile View */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-2 sm:hidden shadow-lg z-20 flex gap-1">
-        <button
-          onClick={() => setViewMode('main')}
-          className="flex-1 bg-[#0f1d33] text-sky-200 font-extrabold py-2 px-1 rounded-xl text-[10px] flex items-center justify-center gap-1 shadow-sm"
-          title="กลับหน้าหลัก My Day"
-        >
-          <span>← My Day</span>
-        </button>
-
-        <button
-          onClick={() => {
-            setEditingItem(null);
-            setIsFindingModalOpen(true);
-          }}
-          className="flex-1 bg-[#102a4e] text-white font-bold py-2 px-1 rounded-xl text-[10px] flex items-center justify-center gap-1 shadow-sm"
-        >
-          <Camera className="w-3 h-3 text-sky-300" />
-          <span>ถ่ายรูป</span>
-        </button>
-
-        <button
-          onClick={() => setIsQuickEstimateOpen(true)}
-          className="flex-1 bg-amber-500 text-slate-950 font-bold py-2.5 px-2 rounded-xl text-xs flex items-center justify-center gap-1 shadow-sm"
-        >
-          <Zap className="w-3.5 h-3.5 text-slate-950" />
-          <span>ประเมินเพิ่ม</span>
-        </button>
-
-        <button
-          onClick={() => setIsMultiJobModalOpen(true)}
-          className="flex-1 bg-slate-800 text-sky-200 font-bold py-2.5 px-1.5 rounded-xl text-[11px] flex items-center justify-center gap-1 shadow-sm"
-        >
-          <Building2 className="w-3.5 h-3.5 text-sky-300" />
-          <span>สลับงาน ({jobsList.length})</span>
-        </button>
-
-        <button
-          onClick={() => setViewMode('dashboard')}
-          className="flex-1 bg-amber-400 text-slate-950 font-extrabold py-2.5 px-1.5 rounded-xl text-[11px] flex items-center justify-center gap-1 shadow-sm"
-        >
-          <span>📊 แดชบอร์ด</span>
-        </button>
-
-        <button
-          onClick={() => setViewMode('report')}
-          className="flex-1 bg-emerald-600 text-white font-bold py-2.5 px-1.5 rounded-xl text-[11px] flex items-center justify-center gap-1 shadow-sm"
-        >
-          <FileText className="w-3.5 h-3.5 text-emerald-200" />
-          <span>3 PDF</span>
-        </button>
-      </div>
+      {/* Quick Job Modal for fast creation & urgent dispatch directly within workspace */}
+      <QuickJobModal
+        isOpen={isQuickJobModalOpen}
+        onClose={() => {
+          setIsQuickJobModalOpen(false);
+          setQuickJobPresetCustomer(null);
+          setQuickJobPresetProperty(null);
+          setQuickJobUrgency('Normal');
+        }}
+        customers={customers}
+        properties={properties}
+        onSaveJob={handleSaveQuickJob}
+        presetCustomerId={quickJobPresetCustomer}
+        presetPropertyId={quickJobPresetProperty}
+        initialUrgency={quickJobUrgency}
+      />
 
       {/* Modals */}
       <FindingModal

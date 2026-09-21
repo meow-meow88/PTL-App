@@ -282,6 +282,22 @@ export function mergeJobsWithoutDataLoss(sources: (any[] | null)[]): any[] {
         const existingQuoteCount = (existing.quotation?.hardwareItems?.length || 0) + (existing.quotation?.serviceItems?.length || 0);
         const incomingQuoteCount = (rawJob.quotation?.hardwareItems?.length || 0) + (rawJob.quotation?.serviceItems?.length || 0);
 
+        // Merge events without loss
+        const existingEvents = Array.isArray(existing.events) ? existing.events : [];
+        const incomingEvents = Array.isArray(rawJob.events) ? rawJob.events : [];
+        const eventMap = new Map<string, any>();
+        for (const ev of [...existingEvents, ...incomingEvents]) {
+          if (ev && ev.id) eventMap.set(ev.id, ev);
+        }
+
+        // Merge evidence photos without loss
+        const existingPhotos = Array.isArray(existing.evidencePhotos) ? existing.evidencePhotos : [];
+        const incomingPhotos = Array.isArray(rawJob.evidencePhotos) ? rawJob.evidencePhotos : [];
+        const photoMap = new Map<string, any>();
+        for (const ph of [...existingPhotos, ...incomingPhotos]) {
+          if (ph && ph.id) photoMap.set(ph.id, ph);
+        }
+
         jobMap.set(rawJob.id, {
           ...existing,
           ...rawJob,
@@ -290,8 +306,11 @@ export function mergeJobsWithoutDataLoss(sources: (any[] | null)[]): any[] {
           propertyLocation: rawJob.propertyLocation || existing.propertyLocation,
           driveFolderUrl: rawJob.driveFolderUrl || existing.driveFolderUrl || '',
           items: Array.from(itemMap.values()),
+          events: Array.from(eventMap.values()),
+          evidencePhotos: Array.from(photoMap.values()),
           quotation: incomingQuoteCount >= existingQuoteCount ? rawJob.quotation : existing.quotation,
           updatedAt: rawJob.updatedAt || existing.updatedAt || new Date().toISOString(),
+          lastActivityAt: rawJob.lastActivityAt || existing.lastActivityAt || rawJob.updatedAt || existing.updatedAt,
         });
       }
     }

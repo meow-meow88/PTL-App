@@ -15,8 +15,12 @@ import {
   Layers,
   Sparkles,
   ShieldCheck,
+  Zap,
 } from 'lucide-react';
 import { InspectionJob } from '../types';
+import { useLanguage } from '../i18n/translations';
+import { getLocalizedServiceName } from '../utils/serviceWorkflow';
+import { formatTime24h } from '../utils/dateTime';
 
 interface MultiJobModalProps {
   currentJobId: string;
@@ -39,9 +43,26 @@ export const MultiJobModal: React.FC<MultiJobModalProps> = ({
   onClose,
   onOpenBackupModal,
 }) => {
+  const { lang, t } = useLanguage();
+  const isTh = lang === 'th';
+
+  const [tab, setTab] = useState<'active' | 'all'>('active');
   const [searchTerm, setSearchTerm] = useState('');
 
-  const filteredJobs = (jobs || []).filter((j) => {
+  // Active jobs filter (In Progress, actualStartedAt, visitStartedAt, siteArrivedAt, or Scheduled today)
+  const activeJobs = (jobs || []).filter(
+    (j) =>
+      j.status === 'In Progress' ||
+      Boolean(j.visitStartedAt) ||
+      Boolean(j.siteArrivedAt) ||
+      Boolean(j.actualStartedAt) ||
+      j.status === 'Waiting Approval' ||
+      j.status === 'Waiting Vendor'
+  );
+
+  const displayList = tab === 'active' ? (activeJobs.length > 0 ? activeJobs : jobs) : jobs;
+
+  const filteredJobs = displayList.filter((j) => {
     if (!j) return false;
     const q = (searchTerm || '').toLowerCase().trim();
     if (!q) return true;
@@ -61,44 +82,27 @@ export const MultiJobModal: React.FC<MultiJobModalProps> = ({
     );
   });
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'Inspection':
-        return (
-          <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-2 py-0.5 rounded-full border border-amber-300 flex items-center gap-1">
-            <Clock className="w-3 h-3 text-amber-700" />
-            <span>กำลังตรวจ (Inspection)</span>
-          </span>
-        );
-      case 'Quoted':
-        return (
-          <span className="text-[10px] bg-blue-100 text-blue-900 font-bold px-2 py-0.5 rounded-full border border-blue-300 flex items-center gap-1">
-            <Layers className="w-3 h-3 text-blue-700" />
-            <span>เสนอราคาแล้ว (Quoted)</span>
-          </span>
-        );
-      case 'Completed':
-        return (
-          <span className="text-[10px] bg-emerald-100 text-emerald-900 font-bold px-2 py-0.5 rounded-full border border-emerald-300 flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3 text-emerald-700" />
-            <span>เสร็จสิ้น (Completed)</span>
-          </span>
-        );
-      default:
-        return (
-          <span className="text-[10px] bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded-full">
-            {status}
-          </span>
-        );
+  const getProgressSummary = (j: InspectionJob) => {
+    if (j.items && j.items.length > 0) {
+      const completed = j.items.filter((it) => !!it.imageUrl || it.status === 'Normal').length;
+      return `${completed}/${j.items.length} ${isTh ? 'จุดตรวจ' : 'items checked'}`;
     }
+    if (j.assignedVendorName) {
+      return `${isTh ? 'ช่าง' : 'Vendor'}: ${j.assignedVendorName} (${j.vendorStatus || (isTh ? 'กำลังเดินทาง' : 'Dispatched')})`;
+    }
+    if (j.visitStartedAt) {
+      return `${isTh ? 'เริ่มตรวจเมื่อ' : 'Started at'} ${formatTime24h(j.visitStartedAt)}`;
+    }
+    return j.status;
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto w-full max-w-full">
       <div className="bg-white rounded-2xl max-w-2xl w-full p-4 sm:p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto border border-slate-200 animate-in fade-in zoom-in-95 duration-200 min-w-0">
         <button
+          type="button"
           onClick={onClose}
-          className="absolute top-3.5 sm:top-4 right-3.5 sm:right-4 text-slate-400 hover:text-slate-700 bg-slate-100 p-2 rounded-full transition-colors"
+          className="absolute top-3.5 sm:top-4 right-3.5 sm:right-4 text-slate-400 hover:text-slate-700 bg-slate-100 p-2 rounded-full transition-colors cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
@@ -110,17 +114,45 @@ export const MultiJobModal: React.FC<MultiJobModalProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
-                ตารางงานตรวจวันนี้ &amp; สลับวิลล่า (Multi-Site Manager)
+              <h2 className="text-base sm:text-lg font-black text-slate-900 leading-tight">
+                {isTh ? 'สลับงานที่กำลังดำเนินการ' : 'Switch Active Job'}
               </h2>
-              <span className="text-[10px] bg-blue-100 text-blue-900 font-bold px-2 py-0.5 rounded-full">
-                {jobs.length} สถานที่
+              <span className="text-[10px] bg-blue-100 text-blue-900 font-extrabold px-2 py-0.5 rounded-full">
+                {activeJobs.length} {isTh ? 'งานกำลังทำ' : 'Active'}
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              วันนึงตรวจหลายที่ สามารถสลับงานได้ทันที 1 คลิก โดยรูปภาพ ข้อมูล และใบเสนอราคาของแต่ละที่จะแยกเก็บอิสระ
+              {isTh
+                ? 'สลับไปทำงานอื่นได้ทันที 1 คลิก โดยข้อมูล รูปถ่าย และใบเสนอราคาจะแยกบันทึกอิสระ'
+                : 'Instantly switch between concurrent field jobs. All photos and data remain safely isolated.'}
             </p>
           </div>
+        </div>
+
+        {/* Tab Toggle: Active Jobs vs All Jobs */}
+        <div className="flex items-center gap-2 mb-3">
+          <button
+            type="button"
+            onClick={() => setTab('active')}
+            className={`min-h-[36px] px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              tab === 'active'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+            }`}
+          >
+            {isTh ? 'งานที่กำลังดำเนินการ' : 'Active Jobs'} ({activeJobs.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('all')}
+            className={`min-h-[36px] px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              tab === 'all'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+            }`}
+          >
+            {isTh ? 'งานทั้งหมด' : 'All Jobs'} ({jobs.length})
+          </button>
         </div>
 
         {/* Top Controls: Search + Add New */}
@@ -131,37 +163,22 @@ export const MultiJobModal: React.FC<MultiJobModalProps> = ({
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="ค้นหาชื่อวิลล่า, ลูกค้า หรือสถานที่..."
+              placeholder={isTh ? 'ค้นหาชื่อวิลล่า ลูกค้า หรือสถานที่...' : 'Search villa, customer, or location...'}
               className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-600 outline-hidden focus:bg-white transition-all"
             />
           </div>
 
           <div className="flex items-center gap-2">
-            {onOpenBackupModal && (
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onOpenBackupModal();
-                }}
-                className="inline-flex items-center justify-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold px-3 py-2 rounded-xl text-xs transition-colors shrink-0 cursor-pointer"
-                title="เปิดระบบสำรองและกู้คืนข้อมูล"
-              >
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>💾 สำรอง/กู้คืน</span>
-              </button>
-            )}
-
             <button
               type="button"
               onClick={() => {
                 onClose();
                 onAddNewJob();
               }}
-              className="inline-flex items-center justify-center gap-1.5 bg-[#102a4e] hover:bg-blue-900 text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors shadow-xs shrink-0 cursor-pointer"
+              className="inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-black px-4 py-2 rounded-xl text-xs transition-colors shadow-xs shrink-0 cursor-pointer min-h-[40px]"
             >
-              <Plus className="w-4 h-4 text-sky-300" />
-              <span>+ สร้างงานตรวจใหม่</span>
+              <Plus className="w-4 h-4 stroke-[3]" />
+              <span>{isTh ? '+ งานใหม่' : '+ New Job'}</span>
             </button>
           </div>
         </div>
@@ -170,18 +187,12 @@ export const MultiJobModal: React.FC<MultiJobModalProps> = ({
         <div className="space-y-2.5 max-h-[58vh] overflow-y-auto pr-1">
           {filteredJobs.length === 0 ? (
             <div className="text-center py-8 text-slate-400 text-xs">
-              ไม่พบงานตรวจที่ตรงกับคำค้นหา
+              {isTh ? 'ไม่พบงานที่ค้นหา' : 'No matching jobs found'}
             </div>
           ) : (
             filteredJobs.map((j) => {
               const isCurrent = j.id === currentJobId;
-              const itemCount = j.items?.length || 0;
-              const hwList = j.quotation?.hardwareItems || [];
-              const svList = j.quotation?.serviceItems || [];
-              const feeRate = j.quotation?.procurementFeeRate ?? 0.15;
-              const totalAmount =
-                hwList.reduce((s, h) => s + (h?.amount || 0), 0) * (1 + feeRate) +
-                svList.reduce((s, sv) => s + (sv?.amount || 0), 0);
+              const progressStr = getProgressSummary(j);
 
               return (
                 <div
@@ -193,33 +204,41 @@ export const MultiJobModal: React.FC<MultiJobModalProps> = ({
                   }`}
                 >
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 mb-2">
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2 mb-1">
-                        <span className="font-bold text-slate-900 text-sm truncate">
-                          {j.villaName}
+                        <span className="font-extrabold text-slate-900 text-sm truncate">
+                          {j.villaName || j.customerName || j.serviceType}
                         </span>
                         {isCurrent && (
                           <span className="text-[10px] bg-blue-600 text-white font-black px-2 py-0.2 rounded-full">
-                            ★ กำลังเปิดใช้งานอยู่
+                            ★ {isTh ? 'กำลังเปิดอยู่' : 'Current Job'}
                           </span>
                         )}
-                        {getStatusBadge(j.status)}
+                        <span className="text-[10px] bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded-full">
+                          {getLocalizedServiceName(j.serviceType, lang)}
+                        </span>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
                         <div className="flex items-center gap-1">
                           <User className="w-3.5 h-3.5 text-slate-400" />
                           <span className="font-semibold text-slate-800">{j.customerName}</span>
-                          <span className="text-[10px] text-slate-400">({j.customerGroup})</span>
                         </div>
-                        <div className="flex items-center gap-1 truncate max-w-xs">
-                          <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span className="truncate">{j.propertyLocation}</span>
-                        </div>
+                        {j.propertyLocation && (
+                          <div className="flex items-center gap-1 truncate max-w-xs">
+                            <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span className="truncate">{j.propertyLocation}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Progress snippet */}
+                      <div className="mt-1.5 inline-block text-[11px] font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                        {progressStr}
                       </div>
                     </div>
 
-                    {/* Action buttons */}
+                    {/* Action buttons (Touch target ≥44px for primary) */}
                     <div className="flex items-center gap-1.5 self-end sm:self-start shrink-0">
                       {!isCurrent ? (
                         <button
@@ -228,65 +247,45 @@ export const MultiJobModal: React.FC<MultiJobModalProps> = ({
                             onSelectJob(j.id);
                             onClose();
                           }}
-                          className="inline-flex items-center gap-1 text-xs bg-[#102a4e] hover:bg-blue-900 text-white font-bold px-3 py-1.5 rounded-lg transition-colors shadow-2xs"
+                          className="min-h-[44px] inline-flex items-center gap-1 text-xs bg-slate-900 hover:bg-slate-800 text-white font-black px-4 py-2 rounded-xl transition-colors shadow-2xs cursor-pointer active:scale-95"
                         >
-                          <span>สลับไปตรวจที่นี่</span>
+                          <span>{isTh ? 'ทำงานต่อ' : 'Resume Work'}</span>
                           <ArrowRight className="w-3.5 h-3.5 text-sky-300" />
                         </button>
                       ) : (
                         <button
                           type="button"
                           onClick={onClose}
-                          className="inline-flex items-center gap-1 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg transition-colors shadow-2xs"
+                          className="min-h-[44px] inline-flex items-center gap-1 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-black px-4 py-2 rounded-xl transition-colors shadow-2xs cursor-pointer"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>เปิดตรวจต่อ</span>
+                          <span>{isTh ? 'เปิดต่อ' : 'Continue'}</span>
                         </button>
                       )}
 
                       <button
                         type="button"
                         onClick={() => onDuplicateJob(j)}
-                        title="คัดลอกเป็นงานใหม่ (เช่น ตรวจหลังข้างเคียง)"
-                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title={isTh ? 'คัดลอกงาน' : 'Duplicate Job'}
+                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
                       >
-                        <Copy className="w-3.5 h-3.5" />
+                        <Copy className="w-4 h-4" />
                       </button>
 
                       {jobs.length > 1 && (
                         <button
                           type="button"
                           onClick={() => {
-                            if (confirm(`ต้องการลบงาน "${j.villaName}" ใช่หรือไม่?`)) {
+                            if (confirm(isTh ? `ต้องการลบงาน "${j.villaName}" ใช่หรือไม่?` : `Delete job "${j.villaName}"?`)) {
                               onDeleteJob(j.id);
                             }
                           }}
-                          title="ลบงานนี้"
-                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title={isTh ? 'ลบงานนี้' : 'Delete Job'}
+                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       )}
-                    </div>
-                  </div>
-
-                  {/* Job Specs Footer */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-[11px] text-slate-500">
-                    <div className="flex items-center gap-3">
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-slate-400" />
-                        <span>{j.inspectionDate}</span>
-                      </span>
-                      <span className="font-mono text-slate-400">ID: {j.id}</span>
-                    </div>
-
-                    <div className="flex items-center gap-3 font-medium">
-                      <span className="text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
-                        📸 {itemCount} จุดตรวจ
-                      </span>
-                      <span className="text-slate-900 bg-slate-100 px-2 py-0.5 rounded font-bold">
-                        ฿{Math.round(totalAmount).toLocaleString()} THB
-                      </span>
                     </div>
                   </div>
                 </div>
@@ -300,15 +299,15 @@ export const MultiJobModal: React.FC<MultiJobModalProps> = ({
           <div className="flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
             <span>
-              <strong>Tip สำหรับวันตรวจหลายวิลล่า:</strong> ท่านสามารถสร้างงานตรวจไว้ล่วงหน้าตอนเช้า แล้วเมื่อถึงแต่ละวิลล่าเพียงกดสลับงาน ข้อมูลรูปถ่ายจะเข้าโฟลเดอร์ของวิลล่านั้นทันที
+              <strong>PTL Multi-Site Ops:</strong> {isTh ? 'ท่านสามารถสลับงานระหว่างวันได้โดยไม่ต้องรีโหลด และไม่สูญเสียข้อมูลรูปภาพ' : 'Switch active visits without reload. Photos and progress remain safe.'}
             </span>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="text-xs text-slate-600 hover:text-slate-900 font-bold px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors shrink-0"
+            className="text-xs text-slate-600 hover:text-slate-900 font-bold px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors shrink-0 cursor-pointer"
           >
-            ปิดหน้าต่าง
+            {isTh ? 'ปิดหน้าต่าง' : 'Close'}
           </button>
         </div>
       </div>

@@ -1,22 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="100%" height="100%" preserveAspectRatio="xMidYMid meet">
   <defs>
-    <!-- Crisp split gradient for shield: left dark charcoal #31343b, right medium grey #7b8089 -->
+    <!-- Crisp split gradient for shield: left dark charcoal, right medium grey -->
     <linearGradient id="ptlShieldSplit" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="49.8%" stop-color="#31343b" />
       <stop offset="50.2%" stop-color="#7b8089" />
     </linearGradient>
-    <!-- 3D beveled navy gradient for compass star matching Phuket Trusted Local original logo -->
-    <linearGradient id="ptlStarGrad" x1="15%" y1="0%" x2="85%" y2="100%">
-      <stop offset="0%" stop-color="#27538a" />
-      <stop offset="45%" stop-color="#163b66" />
-      <stop offset="55%" stop-color="#0d2745" />
+    <!-- 3D beveled navy gradient for compass star -->
+    <linearGradient id="ptlStarGrad" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#2a588f" />
+      <stop offset="45%" stop-color="#183c66" />
+      <stop offset="55%" stop-color="#0e2847" />
       <stop offset="100%" stop-color="#1a3d69" />
     </linearGradient>
   </defs>
-  <!-- Background matches original upload -->
-  <rect width="1024" height="1024" fill="#ffffff" />
+  <rect width="1024" height="1024" fill="#ffffff" rx="16"/>
   <g transform="translate(0.000000,1024.000000) scale(0.100000,-0.100000)" stroke="none">
-    <!-- 1. Star at top of crest -->
+    <!-- 1. Star at top -->
     <g fill="url(#ptlStarGrad)">
       <path d="M5116 8850 c-3 -8 -24 -64 -46 -124 -44 -121 -49 -139 -19 -83 23 43
 29 45 49 15 12 -19 16 -78 18 -325 2 -180 0 -303 -6 -303 -5 0 -58 50 -117
@@ -32,7 +31,7 @@ c-47 -1 -177 -4 -290 -7 l-205 -6 115 115 115 115 -46 124 c-149 394 -188 491
 0 -3 -5 5 -10z" />
     </g>
 
-    <!-- 2. Shield Frame with 2-Tone split border -->
+    <!-- 2. Shield Frame with exact split color -->
     <g fill="url(#ptlShieldSplit)">
       <path d="M3380 7760 c-343 -120 -630 -222 -637 -226 -9 -7 -10 -63 -3 -244 17
 -438 46 -758 95 -1065 130 -810 358 -1396 723 -1855 98 -123 337 -366 477
@@ -74,7 +73,7 @@ m2494 -1064 c0 -5 5 -7 10 -4 6 3 10 1 10 -5 0 -9 -41 -31 -47 -26 -1 1 0 12
       <path d="M7287 6334 c-8 -8 1 -24 12 -24 4 0 8 7 8 15 0 16 -9 20 -20 9z" />
     </g>
 
-    <!-- 3. Monogram P (Charcoal Slate) -->
+    <!-- 3. Monogram P (Charcoal) -->
     <g fill="#31343b">
       <path d="M4010 6391 l0 -701 165 0 165 0 0 214 0 213 308 6 c337 6 395 14 506
 66 166 80 256 226 256 414 -1 98 -12 151 -48 225 -54 112 -163 191 -321 234
@@ -89,7 +88,7 @@ m2494 -1064 c0 -5 5 -7 10 -4 6 3 10 1 10 -5 0 -9 -41 -31 -47 -26 -1 1 0 12
 547 238 3 237 2 0 145 0 145 -642 0 -643 0 3 -145z" />
     </g>
 
-    <!-- 5. Monogram L (Charcoal Slate) -->
+    <!-- 5. Monogram L (Charcoal) -->
     <g fill="#31343b">
       <path d="M5440 5070 l0 -480 384 0 384 0 88 114 c49 63 97 128 107 145 l18 31
 -325 0 -326 0 0 335 0 335 -165 0 -165 0 0 -480z" />
@@ -101,7 +100,7 @@ m2494 -1064 c0 -5 5 -7 10 -4 6 3 10 1 10 -5 0 -9 -41 -31 -47 -26 -1 1 0 12
 -9 2 -12 -2z" />
     </g>
 
-    <!-- 6. PHUKET (Bold Dark Charcoal) -->
+    <!-- 6. PHUKET (Dark Charcoal) -->
     <g fill="#26282c">
       <path d="M2425 2922 c-9 -9 -5 -771 4 -776 5 -3 52 -3 105 1 l96 6 0 104 0
 103 98 0 c198 1 311 30 380 99 47 47 64 86 70 158 7 94 -12 148 -74 210 -80
@@ -176,7 +175,7 @@ m296 -92 c48 -27 74 -72 74 -129 -1 -103 -57 -148 -194 -157 l-90 -6 0 157 0
 -125 0 -125 0 -2 193 -3 192 -38 3 c-24 2 -39 -1 -42 -10z" />
     </g>
 
-    <!-- 8. YOUR TRUSTED CONTACT IN PHUKET (Muted Slate Grey) -->
+    <!-- 8. YOUR TRUSTED CONTACT IN PHUKET (Slate Grey) -->
     <g fill="#6e737c">
       <path d="M4023 1313 c-23 -4 -53 -38 -53 -60 0 -20 29 -42 70 -53 25 -7 40
 -17 40 -27 0 -13 -9 -15 -50 -11 -56 6 -79 -15 -34 -32 54 -21 110 -4 120 35

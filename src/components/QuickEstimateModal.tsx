@@ -1229,7 +1229,7 @@ _Mr. Big & PTL Engineering Support_`;
                               {item.descriptionEn}
                             </div>
                             <div className="text-[10px] text-slate-400 mt-0.5">
-                              {item.qty} {item.unit} × ฿{item.unitPrice.toLocaleString()}{' '}
+                              {item.qty} {item.unit} × ฿{(item.unitPrice || 0).toLocaleString()}{' '}
                               {item.sourcingChannel ? `• แหล่งซื้อ: ${item.sourcingChannel}` : ''}
                             </div>
                           </div>
@@ -1237,10 +1237,10 @@ _Mr. Big & PTL Engineering Support_`;
                           <div className="flex items-center gap-2 shrink-0">
                             <div className="text-right pr-1">
                               <div className="text-xs font-bold text-slate-900 font-mono">
-                                ฿{item.amount.toLocaleString()}
+                                ฿{(item.amount || 0).toLocaleString()}
                               </div>
                               <div className="text-[10px] text-amber-700">
-                                +ค่าจัดหา ฿{Math.round(item.amount * feeRate).toLocaleString()}
+                                +ค่าจัดหา ฿{Math.round((item.amount || 0) * feeRate).toLocaleString()}
                               </div>
                             </div>
 
