@@ -123,6 +123,7 @@ function sanitizeJob(j: any): InspectionJob {
     customerGroup: j.customerGroup || 'villa_owner',
     propertyLocation: j.propertyLocation || j.villaName || 'Phuket, Thailand',
     serviceType: j.serviceType || 'Inspection & Diagnostic',
+    jobPurpose: j.jobPurpose,
     status: j.status || 'Inspection',
     inspectionDate: j.inspectionDate || 'Today',
     createdAt: j.createdAt || new Date().toISOString(),

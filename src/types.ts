@@ -1,5 +1,22 @@
 export type CustomerGroup = 'expat' | 'villa_owner' | 'rental_investor';
 
+
+// PTL V2 Service-Aware Job Purpose / Work Intent
+// Kept separate from serviceType and JobStatus so the same service can follow
+// different operational flows (e.g. CCTV inspection vs replacement vs installation).
+export type JobPurpose =
+  | 'INSPECTION_DIAGNOSIS'
+  | 'FAULT_FINDING'
+  | 'REPAIR'
+  | 'REPLACEMENT'
+  | 'INSTALLATION'
+  | 'MAINTENANCE'
+  | 'KNOWN_SCOPE_SERVICE'
+  | 'HOME_WATCH_VISIT'
+  | 'ASSISTANCE'
+  | 'VENDOR_COORDINATION'
+  | 'FOLLOW_UP';
+
 // PTL V2 Extended Job Status Lifecycle (with backward compatibility)
 export type JobStatus =
   | 'New'
@@ -284,6 +301,7 @@ export interface InspectionJob {
   customerGroup: CustomerGroup;
   propertyLocation: string;
   serviceType: string;
+  jobPurpose?: JobPurpose; // What PTL is actually going to do; optional for legacy jobs
   status: JobStatus; // Inspection / Quoted / Paid / Completed
   inspectionDate: string;
   createdAt: string;
@@ -615,6 +633,7 @@ export interface JobRecord {
   Client_ID: string;
   Villa_Name: string;
   Service_Type: string;
+  Job_Purpose?: JobPurpose;
   Status: JobStatus;
   Created_At: string;
 }
@@ -658,6 +677,7 @@ export function convertJobToRelationalTables(job: InspectionJob): {
     Client_ID: job.clientId || `CL-${job.customerName.replace(/\s+/g, '-').toUpperCase()}`,
     Villa_Name: job.villaName || job.propertyLocation,
     Service_Type: job.serviceType,
+    Job_Purpose: job.jobPurpose,
     Status: job.status || 'Inspection',
     Created_At: job.createdAt || job.inspectionDate,
   };
