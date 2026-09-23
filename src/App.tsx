@@ -91,6 +91,8 @@ import {
   savePayments,
   createInvoiceFromJob,
   recordPayment,
+  recordMaterialAdvance,
+  applyMaterialAdvance,
 } from './utils/financeStorage';
 import {
   loadVendors,
@@ -589,6 +591,22 @@ export default function App() {
       alert(err?.message || 'Payment recording failed.');
       throw err;
     }
+  };
+
+  const handleRecordAdvance = async (data: Parameters<typeof recordMaterialAdvance>[0]) => {
+    const updated = recordMaterialAdvance(data, jobsList, payments);
+    await savePayments(updated);
+    setPayments(updated);
+    setToastMessage({title: 'Material advance recorded', subtitle: `฿${data.amount.toLocaleString()} for the new job`});
+  };
+
+  const handleApplyAdvance = async (paymentId: string, invoiceId: string) => {
+    const result = applyMaterialAdvance(paymentId, invoiceId, invoices, payments);
+    await saveInvoices(result.updatedInvoices);
+    await savePayments(result.updatedPayments);
+    setInvoices(result.updatedInvoices);
+    setPayments(result.updatedPayments);
+    setToastMessage({title: 'Advance credited', subtitle: 'Final invoice balance updated without recording new cash'});
   };
 
   const handleOpenFinancials = (jobId: string) => {
@@ -1457,8 +1475,32 @@ export default function App() {
           initialTab="quotation"
           onBack={() => setViewMode(previousViewMode || 'main')}
           onUpdateQuotation={(updatedQuotation) =>
-            updateCurrentJob((prev) => ({ ...prev, quotation: updatedQuotation }))
+            updateCurrentJob((prev) => ({
+              ...prev,
+              quotation: updatedQuotation,
+              repairQuoteDraftedAt: prev.scopeConfirmedAt &&
+                (!prev.quoteSentAt || prev.quoteSentAt < prev.scopeConfirmedAt)
+                ? new Date().toISOString() : prev.repairQuoteDraftedAt,
+            }))
           }
+          onQuoteSent={() => updateCurrentJob((prev) => {
+            const repairAfterInspection = Boolean(prev.scopeConfirmedAt &&
+              (!prev.quoteSentAt || prev.quoteSentAt < prev.scopeConfirmedAt));
+            return {
+              ...prev,
+              status: 'Waiting Approval',
+              quoteSentAt: new Date().toISOString(),
+              quoteType: repairAfterInspection ? 'repair' : prev.jobPurpose === 'INSPECTION_DIAGNOSIS' || prev.jobPurpose === 'FAULT_FINDING' ? 'inspection' : 'standard',
+              inspectionApprovedAt: repairAfterInspection ? prev.inspectionApprovedAt || prev.customerApprovedAt : prev.inspectionApprovedAt,
+              customerApprovedAt: repairAfterInspection ? undefined : prev.customerApprovedAt,
+              inspectionAppointmentDate: repairAfterInspection ? prev.inspectionAppointmentDate || prev.scheduledDate : prev.inspectionAppointmentDate,
+              inspectionAppointmentTime: repairAfterInspection ? prev.inspectionAppointmentTime || prev.scheduledTime : prev.inspectionAppointmentTime,
+              scheduledDate: repairAfterInspection ? undefined : prev.scheduledDate,
+              scheduledTime: repairAfterInspection ? undefined : prev.scheduledTime,
+              appointmentConfirmation: repairAfterInspection ? 'Not Confirmed' : prev.appointmentConfirmation,
+              isConfirmed: repairAfterInspection ? false : prev.isConfirmed,
+            };
+          })}
           onUpdateDriveFolder={(url) =>
             updateCurrentJob((prev) => ({ ...prev, driveFolderUrl: url }))
           }
@@ -1720,19 +1762,18 @@ export default function App() {
           {activeTab === 'money' && (
             <MoneyView
               jobs={jobsList}
+              customers={customers}
+              properties={properties}
               expenses={expenses}
               invoices={invoices}
               payments={payments}
-              onOpenFinancials={handleOpenFinancials}
               onOpenAddExpense={handleOpenAddExpense}
-              onOpenInvoice={handleOpenInvoice}
+              onSelectInvoice={handleOpenInvoice}
+              onSelectJob={(jobId) => {setActiveJobId(jobId); setPreviousViewMode('main'); setViewMode('inspection');}}
+              onSelectCustomer={(customerId) => {setSelectedCustomerIdForView(customerId); setActiveTab('customers');}}
               onOpenRecordPayment={handleOpenRecordPayment}
-              onCreateInvoiceForJob={handleCreateInvoiceForJob}
-              onOpenJobReport={(jobId) => {
-                setActiveJobId(jobId);
-                setPreviousViewMode('main');
-                setViewMode('report');
-              }}
+              onOpenCreateInvoice={() => {setActiveTab('jobs'); setToastMessage({title: 'Choose a job', subtitle: 'Open the job to create its invoice'});}}
+              onApplyAdvance={handleApplyAdvance}
             />
           )}
 
@@ -1853,7 +1894,10 @@ export default function App() {
               setSelectedInvoiceIdForPayment(null);
             }}
             invoices={invoices}
+            payments={payments}
+            jobs={jobsList}
             onRecordPayment={handleRecordPayment}
+            onRecordAdvance={handleRecordAdvance}
             presetInvoiceId={selectedInvoiceIdForPayment || undefined}
           />
         )}
@@ -2265,4 +2309,3 @@ export default function App() {
     </div>
   );
 }
-
