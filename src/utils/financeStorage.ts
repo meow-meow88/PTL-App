@@ -6,6 +6,58 @@ const EXPENSES_KEY = 'ptl_expenses_archive';
 const INVOICES_KEY = 'ptl_invoices_archive';
 const PAYMENTS_KEY = 'ptl_payments_archive';
 
+const money = (n: number) => Math.round(n * 100) / 100;
+
+/** Record cash received for a job before its final invoice exists. */
+export function recordMaterialAdvance(
+  params: { jobId: string; customerId: string; amount: number; paymentMethod: PaymentMethod;
+    date?: string; reference?: string; notes?: string; slips?: Payment['slips'] },
+  jobs: InspectionJob[], payments: Payment[]
+): Payment[] {
+  const job = jobs.find((item) => item.id === params.jobId);
+  if (!job || !params.customerId || (job.customerId || job.clientId) !== params.customerId) {
+    throw new Error('Select a job and its matching customer.');
+  }
+  if (!Number.isFinite(params.amount) || params.amount <= 0) throw new Error('Enter a valid advance amount.');
+  if (params.slips?.length && money(params.slips.reduce((sum, slip) => sum + slip.amount, 0)) !== money(params.amount)) {
+    throw new Error('Transfer slip amounts must equal the advance.');
+  }
+  if (params.slips?.some((slip) => !Number.isFinite(slip.amount) || slip.amount <= 0)) throw new Error('Invalid slip amount.');
+  const refs = new Set<string>();
+  for (const slip of params.slips || []) {
+    const ref = slip.reference?.trim().toLowerCase();
+    if (ref && (refs.has(ref) || payments.some((p) => p.slips?.some((saved) => saved.reference?.trim().toLowerCase() === ref)))) {
+      throw new Error(`Transfer reference ${slip.reference} has already been recorded.`);
+    }
+    if (ref) refs.add(ref);
+  }
+  const date = params.date || new Date().toISOString().slice(0, 10);
+  return [{ id: `PAY-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+    invoiceId: '', jobId: job.id, customerId: params.customerId, date,
+    amount: params.amount, paymentMethod: params.paymentMethod,
+    reference: params.reference?.trim(), notes: params.notes?.trim(), slips: params.slips,
+    purpose: 'material_advance', allocations: [{itemIndex: -1, description: 'Material advance for ' + job.villaName, amount: params.amount}],
+    receiptNumber: `PTL-RC-${date.replace(/-/g, '')}-${Date.now().toString().slice(-6)}`,
+    createdAt: new Date().toISOString() }, ...payments];
+}
+
+/** Apply an existing advance without creating a second cash receipt. */
+export function applyMaterialAdvance(paymentId: string, invoiceId: string, invoices: Invoice[], payments: Payment[]) {
+  const advance = payments.find((p) => p.id === paymentId && p.purpose === 'material_advance');
+  const invoice = invoices.find((i) => i.id === invoiceId);
+  if (!advance || !invoice || advance.appliedInvoiceId || advance.invoiceId) throw new Error('Advance is not available.');
+  if (invoice.jobId !== advance.jobId || invoice.customerId !== advance.customerId) throw new Error('Advance belongs to a different job or customer.');
+  const alreadyPaid = payments.filter((p) => p.invoiceId === invoiceId || p.appliedInvoiceId === invoiceId)
+    .reduce((sum, p) => sum + p.amount, 0);
+  const legacyPaid = Math.max(0, invoice.amountPaid - alreadyPaid);
+  if (money(advance.amount) > money(invoice.total - legacyPaid - alreadyPaid)) throw new Error('Advance exceeds the invoice balance.');
+  const updatedPayments = payments.map((p) => p.id === paymentId ? {...p, appliedInvoiceId: invoiceId} : p);
+  const amountPaid = money(legacyPaid + alreadyPaid + advance.amount);
+  const updatedInvoices = invoices.map((i) => i.id === invoiceId ? {...i, amountPaid, balanceDue: money(i.total - amountPaid),
+    status: (money(i.total - amountPaid) === 0 ? 'Paid' : 'Partially Paid') as InvoiceStatus} : i);
+  return {updatedPayments, updatedInvoices};
+}
+
 /**
  * Load Expenses with dual persistence (IndexedDB -> LocalStorage -> empty array)
  * Production-safe: Starts empty if no records are found.
@@ -236,6 +288,8 @@ export function recordPayment(
     reference?: string;
     notes?: string;
     date?: string;
+    slips?: Payment['slips'];
+    allocations?: Payment['allocations'];
   },
   invoices: Invoice[],
   payments: Payment[]
@@ -253,14 +307,50 @@ export function recordPayment(
 
   // Calculate current paid amount for this invoice from existing payments
   const currentPaid = payments
-    .filter((p) => p.invoiceId === targetInvoice.id)
+    .filter((p) => p.invoiceId === targetInvoice.id || p.appliedInvoiceId === targetInvoice.id)
     .reduce((sum, p) => sum + (p.amount || 0), 0);
-  const currentBalanceDue = Math.max(0, targetInvoice.total - currentPaid);
+  // Historical invoices can have a paid balance without individual payment rows.
+  const legacyPaid = Math.max(0, (targetInvoice.amountPaid || 0) - currentPaid);
+  const currentBalanceDue = Math.max(0, targetInvoice.total - legacyPaid - currentPaid);
 
   if (rawAmount > currentBalanceDue) {
     throw new Error(
       `Payment cannot exceed the outstanding balance of ฿${currentBalanceDue.toLocaleString()}.`
     );
+  }
+
+  const round = (n: number) => Math.round(n * 100) / 100;
+  if (params.slips?.length && round(params.slips.reduce((sum, slip) => sum + slip.amount, 0)) !== round(rawAmount)) {
+    throw new Error('Transfer slip amounts must equal the payment amount.');
+  }
+  if (params.allocations?.length && round(params.allocations.reduce((sum, line) => sum + line.amount, 0)) !== round(rawAmount)) {
+    throw new Error('Payment line allocations must equal the payment amount.');
+  }
+  if (params.slips?.some((slip) => !Number.isFinite(slip.amount) || slip.amount <= 0)) {
+    throw new Error('Each transfer slip must have a valid amount.');
+  }
+  const newSlipReferences = new Set<string>();
+  for (const slip of params.slips || []) {
+    const ref = slip.reference?.trim().toLowerCase();
+    if (ref && newSlipReferences.has(ref)) throw new Error(`Duplicate transfer reference: ${slip.reference}`);
+    if (ref) newSlipReferences.add(ref);
+    if (ref && payments.some((payment) => payment.slips?.some((saved) => saved.reference?.trim().toLowerCase() === ref))) {
+      throw new Error(`Transfer reference ${slip.reference} has already been recorded.`);
+    }
+  }
+  for (const line of params.allocations || []) {
+    if (!Number.isFinite(line.amount) || line.amount <= 0 ||
+        (line.itemIndex !== -1 && !targetInvoice.items[line.itemIndex])) {
+      throw new Error('Invalid invoice item allocation.');
+    }
+    if (line.itemIndex >= 0) {
+      const prior = payments.filter((p) => p.invoiceId === targetInvoice.id)
+        .flatMap((p) => p.allocations || []).filter((saved) => saved.itemIndex === line.itemIndex)
+        .reduce((sum, saved) => sum + saved.amount, 0);
+      if (round(prior + line.amount) > round(targetInvoice.items[line.itemIndex].amount)) {
+        throw new Error(`Allocation exceeds invoice line: ${line.description}`);
+      }
+    }
   }
 
   const paymentDate = params.date || new Date().toISOString().slice(0, 10);
@@ -274,6 +364,9 @@ export function recordPayment(
     paymentMethod: params.paymentMethod,
     reference: params.reference?.trim() || '',
     notes: params.notes?.trim() || '',
+    slips: params.slips,
+    allocations: params.allocations,
+    receiptNumber: `PTL-RC-${paymentDate.replace(/-/g, '')}-${Date.now().toString().slice(-6)}`,
     createdAt: new Date().toISOString(),
   };
 
@@ -284,8 +377,8 @@ export function recordPayment(
     if (inv.id !== params.invoiceId) return inv;
 
     // Calculate total paid across all payments for this invoice
-    const invPayments = nextPayments.filter((p) => p.invoiceId === inv.id);
-    const totalPaid = invPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      const invPayments = nextPayments.filter((p) => p.invoiceId === inv.id || p.appliedInvoiceId === inv.id);
+    const totalPaid = legacyPaid + invPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
     const balanceDue = Math.max(0, inv.total - totalPaid);
 
     let status: InvoiceStatus = inv.status;
