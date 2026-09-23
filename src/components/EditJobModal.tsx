@@ -17,11 +17,13 @@ import {
 import {
   InspectionJob,
   JobStatus,
+  JobPurpose,
   Vendor,
   ExecutionMode,
   AssignedToType,
   getOwnerStatusLabel,
 } from '../types';
+import { JOB_PURPOSES } from '../utils/jobPurpose';
 import { DateTimeSelector } from './DateTimeSelector';
 import { useLanguage } from '../i18n/translations';
 import { PHUKET_SERVICE_AREAS, recordJobActivity } from '../utils/jobEvents';
@@ -58,6 +60,7 @@ export const EditJobModal: React.FC<EditJobModalProps> = ({
   const isTh = lang === 'th';
 
   const [serviceType, setServiceType] = useState(job.serviceType || '');
+  const [jobPurpose, setJobPurpose] = useState<JobPurpose | undefined>(job.jobPurpose);
   const [customerName, setCustomerName] = useState(job.customerName || '');
   const [villaName, setVillaName] = useState(job.villaName || '');
   const [propertyLocation, setPropertyLocation] = useState(job.propertyLocation || '');
@@ -105,6 +108,7 @@ export const EditJobModal: React.FC<EditJobModalProps> = ({
     let updatedJob: InspectionJob = {
       ...job,
       serviceType: serviceType.trim() || job.serviceType,
+      jobPurpose,
       customerName: customerName.trim() || job.customerName,
       villaName: villaName.trim() || job.villaName,
       propertyLocation: propertyLocation.trim() || job.propertyLocation,
@@ -297,6 +301,14 @@ export const EditJobModal: React.FC<EditJobModalProps> = ({
           </div>
 
           {/* 4. Request Description */}
+          <div>
+            <label htmlFor="edit-job-purpose" className="block text-xs font-bold text-slate-700 mb-1">{t.quickJob.jobPurpose}</label>
+            <select id="edit-job-purpose" value={jobPurpose || ''} onChange={(e) => setJobPurpose(e.target.value ? e.target.value as JobPurpose : undefined)} className="w-full min-h-[44px] px-3 py-2 text-sm bg-slate-50 border border-slate-300 rounded-xl">
+              <option value="">{t.quickJob.purposeNotSet}</option>
+              {JOB_PURPOSES.map((purpose) => <option key={purpose} value={purpose}>{t.jobPurpose[purpose]}</option>)}
+            </select>
+          </div>
+
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
               {isTh ? 'รายละเอียดคำขอ / ปัญหาที่แจ้ง' : 'Request Description / Job Notes'}
