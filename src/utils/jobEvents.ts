@@ -60,6 +60,10 @@ function defaultEventSummary(eventType: JobEventType, metadata?: Record<string, 
       return 'On-site work / inspection started';
     case 'STATUS_CHANGED':
       return metadata?.status ? `Status changed to ${metadata.status}` : 'Job status updated';
+    case 'APPOINTMENT_CONFIRMED':
+      return metadata?.summary || (metadata?.scheduledDate
+        ? `Appointment confirmed for ${metadata.scheduledDate} ${metadata.scheduledTime || ''}`
+        : 'Appointment confirmed with customer');
     case 'PHOTO_ADDED':
       return metadata?.caption ? `Photo added: ${metadata.caption}` : 'Field photo evidence recorded';
     case 'CHECKLIST_UPDATED':

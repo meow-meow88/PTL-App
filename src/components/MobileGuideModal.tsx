@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { Smartphone, Copy, Check, ExternalLink, Sparkles, AlertCircle, Share2, PlusSquare } from 'lucide-react';
+import { Smartphone, Copy, Check, ExternalLink, Sparkles, AlertCircle, Share2, PlusSquare, RefreshCw } from 'lucide-react';
+import { BUILD_VERSION, BUILD_DATE } from '../utils/buildVersion';
+import { clearAppCachesAndReload } from '../utils/pwaManager';
 
 interface MobileGuideModalProps {
   onClose: () => void;
@@ -7,14 +9,21 @@ interface MobileGuideModalProps {
 
 export const MobileGuideModal: React.FC<MobileGuideModalProps> = ({ onClose }) => {
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
 
-  const directAppUrl = 'https://ais-pre-klrxb5ncvun5xg2n7pxeyo-552343100979.asia-southeast1.run.app';
-  const devAppUrl = 'https://ais-dev-klrxb5ncvun5xg2n7pxeyo-552343100979.asia-southeast1.run.app';
+  // Dynamically resolve current origin so desktop and mobile always align
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://ais-dev-klrxb5ncvun5xg2n7pxeyo-552343100979.asia-southeast1.run.app';
+  const directAppUrl = currentOrigin;
 
   const handleCopy = (url: string) => {
     navigator.clipboard.writeText(url);
     setCopiedUrl(true);
     setTimeout(() => setCopiedUrl(false), 3000);
+  };
+
+  const handleForceClearCache = async () => {
+    setIsClearing(true);
+    await clearAppCachesAndReload();
   };
 
   return (
@@ -151,14 +160,31 @@ export const MobileGuideModal: React.FC<MobileGuideModalProps> = ({ onClose }) =
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="pt-3 border-t border-slate-100 flex items-center justify-end mt-3">
-          <button
-            onClick={onClose}
-            className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all"
-          >
-            เข้าใจแล้ว (ปิดหน้าต่าง)
-          </button>
+        {/* Footer with Build Identifier & Cache Recovery */}
+        <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-2.5 mt-3 text-xs">
+          <div className="text-slate-500 font-mono text-[10px] text-center sm:text-left">
+            <span className="font-semibold text-slate-700">Build {BUILD_VERSION}</span> ({BUILD_DATE})
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <button
+              type="button"
+              onClick={handleForceClearCache}
+              disabled={isClearing}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-[11px] font-semibold transition-colors cursor-pointer disabled:opacity-50"
+              title="ล้างแคชไฟล์เบราว์เซอร์เพื่อดึงโค้ดล่าสุด (ข้อมูลงานไม่หาย)"
+            >
+              <RefreshCw className={`w-3 h-3 ${isClearing ? 'animate-spin' : ''}`} />
+              <span>{isClearing ? 'กำลังล้างแคช...' : 'ล้างแคช & รีเฟรช'}</span>
+            </button>
+
+            <button
+              onClick={onClose}
+              className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all cursor-pointer"
+            >
+              เข้าใจแล้ว (ปิดหน้าต่าง)
+            </button>
+          </div>
         </div>
       </div>
     </div>

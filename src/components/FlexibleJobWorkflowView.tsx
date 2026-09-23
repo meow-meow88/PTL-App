@@ -21,15 +21,22 @@ import {
   Upload,
   Layers,
   ChevronRight,
+  Share2,
+  ShieldAlert,
+  Activity,
+  AlertTriangle,
 } from 'lucide-react';
-import { InspectionJob, Vendor, Invoice, Expense, InspectionItem, EvidencePhoto } from '../types';
+import { InspectionJob, Vendor, Invoice, Expense, InspectionItem, EvidencePhoto, ElectricalAssessmentData } from '../types';
 import {
   getCapabilitiesForJob,
   getPrimaryJobAction,
   PTL_SERVICES,
+  isElectricalService,
 } from '../utils/serviceWorkflow';
 import { useLanguage } from '../i18n/translations';
 import { FindingCard } from './FindingCard';
+import { shareJobToTechnician } from '../utils/technicianShare';
+import { generateMrBigElectricalAssessment } from '../utils/mrBigLocalAnalyzer';
 
 interface FlexibleJobWorkflowViewProps {
   job: InspectionJob;
@@ -77,6 +84,32 @@ export const FlexibleJobWorkflowView: React.FC<FlexibleJobWorkflowViewProps> = (
   const [isAssigningVendor, setIsAssigningVendor] = useState(false);
   const [siteNotesInput, setSiteNotesInput] = useState(job.siteNotes || job.notes || '');
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
+
+  // Share to Technician handler
+  const handleShareToTechnician = async () => {
+    setIsSharing(true);
+    const result = await shareJobToTechnician(job, undefined, undefined, lang === 'th' ? 'th' : 'en');
+    setIsSharing(false);
+
+    if (result.success) {
+      const nowIso = new Date().toISOString();
+      onUpdateJob((prev) => ({
+        ...prev,
+        technicianSharedAt: nowIso,
+      }));
+      setShareFeedback(
+        result.method === 'share_api'
+          ? lang === 'th' ? 'เปิดหน้าต่างแชร์เรียบร้อย' : 'Share sheet opened'
+          : lang === 'th' ? 'คัดลอกรายละเอียดงานลงคลิปบอร์ดแล้ว พร้อมส่งต่อ' : 'Copied job details to clipboard!'
+      );
+    } else {
+      setShareFeedback(result.error || (lang === 'th' ? 'ไม่สามารถแชร์ได้' : 'Sharing failed'));
+    }
+
+    setTimeout(() => setShareFeedback(null), 4000);
+  };
 
   // Job matching invoice & expenses
   const matchingInvoice = invoices.find((inv) => inv.jobId === job.id);
@@ -151,29 +184,65 @@ export const FlexibleJobWorkflowView: React.FC<FlexibleJobWorkflowViewProps> = (
           </div>
         </div>
 
-        <button
-          onClick={() => {
-            if (primaryAct.key === 'start_job' || primaryAct.key === 'start_visit') {
-              onUpdateJob((prev) => ({
-                ...prev,
-                status: 'In Progress',
-                visitStartedAt: prev.visitStartedAt || new Date().toISOString(),
-                siteArrivedAt: prev.siteArrivedAt || new Date().toISOString(),
-              }));
-            } else if (primaryAct.key === 'complete_job') {
-              onCompleteJob();
-            } else if (primaryAct.key === 'record_payment') {
-              onRecordPayment(job.id, job.price || 1500);
-            } else if (primaryAct.key === 'create_quote' || primaryAct.key === 'open_report') {
-              onOpenReport();
-            }
-          }}
-          className="text-xs sm:text-sm font-black text-slate-950 bg-emerald-400 hover:bg-emerald-300 px-5 py-2.5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer shrink-0 flex items-center justify-center gap-2"
-        >
-          <span>{actionLabel}</span>
-          <span>&rarr;</span>
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handleShareToTechnician}
+            disabled={isSharing}
+            className="text-xs font-bold bg-white/10 hover:bg-white/20 text-sky-200 border border-sky-400/30 px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+            title={lang === 'th' ? 'แชร์รายละเอียดงานให้ช่าง' : 'Share job details to technician'}
+          >
+            <Share2 className="w-3.5 h-3.5 text-sky-400" />
+            <span>{lang === 'th' ? 'แชร์ให้ช่าง' : 'Share to Technician'}</span>
+          </button>
+
+          <button
+            onClick={() => {
+              if (primaryAct.key === 'start_job' || primaryAct.key === 'start_visit') {
+                onUpdateJob((prev) => ({
+                  ...prev,
+                  status: 'In Progress',
+                  visitStartedAt: prev.visitStartedAt || new Date().toISOString(),
+                  siteArrivedAt: prev.siteArrivedAt || new Date().toISOString(),
+                }));
+              } else if (primaryAct.key === 'complete_job') {
+                onCompleteJob();
+              } else if (primaryAct.key === 'record_payment') {
+                onRecordPayment(job.id, job.price || 1500);
+              } else if (primaryAct.key === 'create_quote' || primaryAct.key === 'open_report') {
+                onOpenReport();
+              }
+            }}
+            className="text-xs sm:text-sm font-black text-slate-950 bg-emerald-400 hover:bg-emerald-300 px-5 py-2.5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+          >
+            <span>{actionLabel}</span>
+            <span>&rarr;</span>
+          </button>
+        </div>
       </div>
+
+      {/* Share to Technician Status Banner */}
+      {(job.technicianSharedAt || shareFeedback) && (
+        <div className="bg-sky-50 border border-sky-200/80 rounded-xl px-3.5 py-2.5 flex items-center justify-between text-xs text-sky-950">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>
+              {shareFeedback
+                ? shareFeedback
+                : lang === 'th'
+                ? `แชร์รายละเอียดให้ช่างแล้ว เมื่อ ${new Date(job.technicianSharedAt!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                : `Shared with technician at ${new Date(job.technicianSharedAt!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleShareToTechnician}
+            className="text-sky-800 hover:text-sky-950 font-bold underline cursor-pointer text-[11px]"
+          >
+            {lang === 'th' ? 'แชร์ซ้ำ' : 'Share again'}
+          </button>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* 2. HEADER & CLIENT IDENTITY CARD */}
@@ -526,6 +595,131 @@ export const FlexibleJobWorkflowView: React.FC<FlexibleJobWorkflowViewProps> = (
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* 6.5. MR. BIG ELECTRICAL TECHNICAL ASSESSMENT (Case A vs Case B) */}
+      {/* ========================================================================= */}
+      {(isElectricalService(job.serviceType) || job.electricalAssessment) && (() => {
+        const ea = job.electricalAssessment || generateMrBigElectricalAssessment({
+          rawInput: `${job.requestDescription || ''} ${job.notes || ''} ${job.siteNotes || ''}`,
+          zone: job.villaName,
+        });
+
+        return (
+          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-amber-200 shadow-xs">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="w-7 h-7 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center font-black text-xs shadow-xs">
+                  MB
+                </span>
+                <div>
+                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                    {lang === 'th' ? 'Mr. Big — การวิเคราะห์เชิงเทคนิคงานไฟฟ้า' : 'Mr. Big — Electrical Technical Brain'}
+                  </h3>
+                  <p className="text-[10px] text-slate-500">
+                    {lang === 'th' ? 'แยกข้อเท็จจริงหน้างาน • กำหนดแผน Case A / Case B' : 'Preserves field facts • Defines Case A vs. Case B'}
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                {ea.activeCase || 'Case A'}
+              </span>
+            </div>
+
+            {/* Confirmed Fact Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 bg-amber-50/40 rounded-xl border border-amber-200/60 mb-3 text-xs">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 block uppercase mb-0.5">
+                  {lang === 'th' ? 'จุดตรวจ' : 'Zone'}
+                </span>
+                <span className="font-bold text-slate-900">{ea.area}</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 block uppercase mb-0.5">
+                  {lang === 'th' ? 'อุปกรณ์' : 'Component'}
+                </span>
+                <span className="font-bold text-slate-900">{ea.component}</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 block uppercase mb-0.5">
+                  {lang === 'th' ? 'จำนวน' : 'Quantity'}
+                </span>
+                <span className="font-bold text-slate-900">{ea.quantity}</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 block uppercase mb-0.5">
+                  {lang === 'th' ? 'อาการ' : 'Condition'}
+                </span>
+                <span className="font-bold text-rose-700">{ea.condition}</span>
+              </div>
+            </div>
+
+            {/* Customer Facing Report */}
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 mb-3 text-xs">
+              <span className="text-[10px] text-slate-400 font-bold block uppercase mb-1">
+                {lang === 'th' ? 'รายงานสรุปสำหรับลูกค้า (ภาษาเข้าใจง่าย):' : 'Customer-Facing Report:'}
+              </span>
+              <p className="font-semibold text-slate-800">
+                {lang === 'th' ? ea.customerReportTh : ea.customerReportEn}
+              </p>
+            </div>
+
+            {/* Case A / Case B Display */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              <div className={`p-3 rounded-xl border ${
+                ea.activeCase === 'Case A' ? 'bg-emerald-50/60 border-emerald-300 ring-1 ring-emerald-400' : 'bg-slate-50 border-slate-200'
+              }`}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-black text-emerald-900 text-xs">
+                    {lang === 'th' ? ea.caseA.titleTh : ea.caseA.titleEn}
+                  </span>
+                  {ea.activeCase === 'Case A' && (
+                    <span className="text-[9px] bg-emerald-600 text-white font-bold px-1.5 py-0.2 rounded">ACTIVE</span>
+                  )}
+                </div>
+                <ul className="space-y-1 text-[11px] text-slate-700 mb-2">
+                  {(lang === 'th' ? ea.caseA.scopeTh : ea.caseA.scopeEn).map((s, i) => (
+                    <li key={i} className="flex items-start gap-1">
+                      <span className="text-emerald-600 font-bold">•</span>
+                      <span>{s}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="text-[10px] text-emerald-800 font-medium">
+                  <strong>{lang === 'th' ? 'เกณฑ์เสร็จสิ้น:' : 'Criteria:'}</strong> {lang === 'th' ? ea.caseA.completionCriteriaTh : ea.caseA.completionCriteriaEn}
+                </div>
+              </div>
+
+              <div className={`p-3 rounded-xl border ${
+                ea.activeCase === 'Case B' ? 'bg-amber-50/60 border-amber-300 ring-1 ring-amber-400' : 'bg-slate-50 border-slate-200'
+              }`}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-black text-amber-950 text-xs">
+                    {lang === 'th' ? ea.caseB.titleTh : ea.caseB.titleEn}
+                  </span>
+                  {ea.activeCase === 'Case B' && (
+                    <span className="text-[9px] bg-amber-600 text-white font-bold px-1.5 py-0.2 rounded">ACTIVE</span>
+                  )}
+                </div>
+                <div className="p-1.5 bg-amber-100/60 rounded text-[10px] text-amber-900 mb-1.5">
+                  <strong>{lang === 'th' ? 'เงื่อนไข:' : 'Trigger:'}</strong> {lang === 'th' ? ea.caseB.triggerConditionTh : ea.caseB.triggerConditionEn}
+                </div>
+                <ul className="space-y-1 text-[11px] text-slate-700 mb-2">
+                  {(lang === 'th' ? ea.caseB.additionalScopeTh : ea.caseB.additionalScopeEn).map((s, i) => (
+                    <li key={i} className="flex items-start gap-1">
+                      <span className="text-amber-600 font-bold">•</span>
+                      <span>{s}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="p-1.5 bg-rose-50 border border-rose-200 rounded text-[9px] text-rose-900">
+                  {lang === 'th' ? ea.caseB.cautionNoticeTh : ea.caseB.cautionNoticeEn}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ========================================================================= */}
       {/* 7. VISUAL EVIDENCE & PHOTOS CARD */}

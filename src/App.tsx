@@ -46,6 +46,8 @@ import { MollyExpressQuoteModal } from './components/MollyExpressQuoteModal';
 import { MobileGuideModal } from './components/MobileGuideModal';
 import { GoogleDriveModal } from './components/GoogleDriveModal';
 import { BackupRestoreModal } from './components/BackupRestoreModal';
+import { UpdateAvailableBanner } from './components/UpdateAvailableBanner';
+import { initPWAUpdateManager } from './utils/pwaManager';
 import { Navigation } from './components/Navigation';
 import { MyDayView } from './components/MyDayView';
 import { JobWorkspaceView } from './components/JobWorkspaceView';
@@ -221,6 +223,16 @@ export default function App() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [lastSyncStatus, setLastSyncStatus] = useState<string>('กำลังตรวจเช็คระบบความปลอดภัย...');
+  const [updateAvailableVersion, setUpdateAvailableVersion] = useState<string | null>(null);
+
+  // Initialize PWA Service Worker & Safe Cache Manager
+  useEffect(() => {
+    initPWAUpdateManager({
+      onUpdateAvailable: (ver) => {
+        setUpdateAvailableVersion(ver || 'latest');
+      },
+    });
+  }, []);
 
   // Multiple jobs archive for inspectors with multiple sites per day
   const [jobsList, setJobsList] = useState<InspectionJob[]>(() => {
@@ -421,6 +433,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<MainNavTab>('my_day');
   const [viewMode, setViewMode] = useState<'main' | 'inspection' | 'report' | 'dashboard'>('main');
   const [previousViewMode, setPreviousViewMode] = useState<'main' | 'inspection'>('main');
+  const [reportInitialAction, setReportInitialAction] = useState<'view' | 'edit' | 'send' | 'preview'>('view');
   const [customers, setCustomers] = useState<Customer[]>(initialCustomersSeed);
   const [properties, setProperties] = useState<Property[]>(initialPropertiesSeed);
 
@@ -861,6 +874,13 @@ export default function App() {
     setJobForQuickSchedule(null);
   };
 
+  const handleOpenJobQuotation = (jobId: string, action: 'view' | 'edit' | 'send' | 'preview' = 'view') => {
+    setActiveJobId(jobId);
+    setReportInitialAction(action);
+    setPreviousViewMode(viewMode === 'main' ? 'main' : 'inspection');
+    setViewMode('report');
+  };
+
   const handleConfirmAppointment = (jobId: string) => {
     const now = new Date().toISOString();
     setJobsList((prev) => {
@@ -872,8 +892,12 @@ export default function App() {
             appointmentConfirmation: 'Confirmed' as const,
             lastActivityAt: now,
           };
-          return recordJobActivity(updated, 'CUSTOMER_APPROVED', {
-            summary: 'Appointment confirmed with customer',
+          return recordJobActivity(updated, 'APPOINTMENT_CONFIRMED', {
+            summary: `Appointment confirmed with customer${j.scheduledDate ? ` for ${j.scheduledDate}` : ''}`,
+            metadata: {
+              scheduledDate: j.scheduledDate,
+              scheduledTime: j.scheduledTime,
+            },
           });
         }
         return j;
@@ -1428,6 +1452,8 @@ export default function App() {
       <>
         <ReportScreen
           job={job}
+          initialAction={reportInitialAction}
+          initialTab="quotation"
           onBack={() => setViewMode(previousViewMode || 'main')}
           onUpdateQuotation={(updatedQuotation) =>
             updateCurrentJob((prev) => ({ ...prev, quotation: updatedQuotation }))
@@ -1529,10 +1555,8 @@ export default function App() {
                 setPreviousViewMode('main');
                 setViewMode('inspection');
               }}
-              onOpenJobQuotation={(jobId) => {
-                setActiveJobId(jobId);
-                setPreviousViewMode('main');
-                setViewMode('report');
+              onOpenJobQuotation={(jobId, action) => {
+                handleOpenJobQuotation(jobId, action);
               }}
               onOpenQuickJob={handleOpenNormalJob}
               onOpenUrgentJob={handleOpenUrgentJob}
@@ -1561,6 +1585,35 @@ export default function App() {
               onOpenRecurringModal={() => setIsRecurringModalOpen(true)}
               onConfirmAppointment={handleConfirmAppointment}
               onOpenEditJob={handleOpenEditJob}
+              onCustomerApprove={(jobId) => {
+                const nowIso = new Date().toISOString();
+                setJobsList((prev) =>
+                  prev.map((j) =>
+                    j.id === jobId
+                      ? {
+                          ...j,
+                          status: 'Approved',
+                          customerApprovedAt: nowIso,
+                          quoteStatus: 'approved',
+                        }
+                      : j
+                  )
+                );
+              }}
+              onFinishFieldWork={(jobId) => {
+                const nowIso = new Date().toISOString();
+                setJobsList((prev) =>
+                  prev.map((j) =>
+                    j.id === jobId
+                      ? {
+                          ...j,
+                          status: 'Completed',
+                          fieldWorkCompletedAt: nowIso,
+                        }
+                      : j
+                  )
+                );
+              }}
             />
           )}
 
@@ -1693,13 +1746,12 @@ export default function App() {
               customers={customers}
               onOpenJobReport={(jobId) => {
                 setActiveJobId(jobId);
+                setReportInitialAction('view');
                 setPreviousViewMode('main');
                 setViewMode('report');
               }}
-              onOpenJobQuotation={(jobId) => {
-                setActiveJobId(jobId);
-                setPreviousViewMode('main');
-                setViewMode('report');
+              onOpenJobQuotation={(jobId, action) => {
+                handleOpenJobQuotation(jobId, action);
               }}
               onOpenJobInspection={(jobId) => {
                 setActiveJobId(jobId);
@@ -1934,13 +1986,12 @@ export default function App() {
         onOpenUrgentJob={handleOpenUrgentJob}
         onOpenMultiJob={() => setIsMultiJobModalOpen(true)}
         onOpenReport={() => {
+          setReportInitialAction('view');
           setPreviousViewMode('inspection');
           setViewMode('report');
         }}
-        onOpenQuotation={(jobId) => {
-          setActiveJobId(jobId);
-          setPreviousViewMode('inspection');
-          setViewMode('report');
+        onOpenQuotation={(jobId, action) => {
+          handleOpenJobQuotation(jobId, action);
         }}
         onOpenQuickEstimate={() => setIsQuickEstimateOpen(true)}
         onOpenFindingModal={(item) => {
@@ -2199,6 +2250,15 @@ export default function App() {
           onClose={() => setIsMollyExpressOpen(false)}
           onCreateJobAndOpenQuotation={handleCreateExpressQuoteJob}
           existingJobsCount={jobsList.length}
+        />
+      )}
+
+      {/* Non-intrusive Safe PWA Update Banner */}
+      {updateAvailableVersion && (
+        <UpdateAvailableBanner
+          newVersion={updateAvailableVersion !== 'latest' ? updateAvailableVersion : undefined}
+          isTh={lang === 'th'}
+          onDismiss={() => setUpdateAvailableVersion(null)}
         />
       )}
     </div>

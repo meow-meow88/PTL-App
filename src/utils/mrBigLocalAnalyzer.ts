@@ -1,4 +1,12 @@
-import { FindingStatus } from '../types';
+import {
+  FindingStatus,
+  ElectricalAssessmentData,
+  ElectricalCaseA,
+  ElectricalCaseB,
+  ElectricalBoqMaterial,
+  ElectricalBoqResource,
+  ElectricalMeasurements,
+} from '../types';
 
 export function translateZoneToEnglish(zone: string): string {
   const raw = (zone || '').trim();
@@ -853,3 +861,286 @@ export function analyzeFindingLocally(
     peaceOfMindNote: 'Mr. Big พร้อมดูแลแก้ไขปัญหาหน้างานให้อย่างรวดเร็วและถูกต้อง',
   };
 }
+
+// =========================================================================
+// MR. BIG — ELECTRICAL ASSESSMENT & CASE A / CASE B ENGINE
+// =========================================================================
+
+export interface MrBigElectricalParams {
+  rawInput?: string;
+  zone?: string;
+  component?: string;
+  quantity?: number | string;
+  condition?: string;
+}
+
+/**
+ * Generates structured Mr. Big electrical diagnostic preserving confirmed facts,
+ * separating possible causes, creating Case A / Case B logic, and providing BOQ/resources.
+ * Never sets customer prices (reserved for Molly).
+ * Never fabricates measurements (defaults to "Not measured / Unknown").
+ */
+export function generateMrBigElectricalAssessment(params: MrBigElectricalParams): ElectricalAssessmentData {
+  const raw = (params.rawInput || '').trim();
+  const lower = raw.toLowerCase();
+
+  // 1. Fact Preservation: Component Detection
+  let detectedComponent = (params.component || '').trim();
+  let detectedComponentTh = '';
+  let detectedComponentEn = '';
+
+  if (!detectedComponent) {
+    if (lower.includes('par38') || lower.includes('par 38')) {
+      detectedComponent = 'PAR38 bulb';
+      detectedComponentEn = 'PAR38 bulb';
+      detectedComponentTh = 'หลอดไฟ PAR38';
+    } else if (lower.includes('gu10')) {
+      detectedComponent = 'GU10 spotlight bulb';
+      detectedComponentEn = 'GU10 spotlight bulb';
+      detectedComponentTh = 'หลอดไฟสปอตไลท์ GU10';
+    } else if (lower.includes('led strip') || lower.includes('ไฟเส้น')) {
+      detectedComponent = 'LED light strip & driver';
+      detectedComponentEn = 'LED light strip & driver';
+      detectedComponentTh = 'ไฟเส้น LED และหม้อแปลง Driver';
+    } else if (lower.includes('downlight') || lower.includes('ดาวน์ไลท์')) {
+      detectedComponent = 'Recessed downlight fixture';
+      detectedComponentEn = 'Recessed downlight fixture';
+      detectedComponentTh = 'โคมไฟดาวน์ไลท์แบบฝังฝ้า';
+    } else if (lower.includes('switch') || lower.includes('สวิตช์')) {
+      detectedComponent = 'Wall rocker switch module';
+      detectedComponentEn = 'Wall rocker switch module';
+      detectedComponentTh = 'ชุดสวิตช์ไฟติดผนัง';
+    } else if (lower.includes('socket') || lower.includes('ปลั๊ก') || lower.includes('เต้ารับ')) {
+      detectedComponent = 'Duplex grounded wall socket';
+      detectedComponentEn = 'Duplex grounded wall socket';
+      detectedComponentTh = 'เต้ารับไฟฟ้ามีกราวด์';
+    } else if (lower.includes('breaker') || lower.includes('เบรกเกอร์') || lower.includes('rcbo')) {
+      detectedComponent = 'Circuit breaker / RCBO';
+      detectedComponentEn = 'Circuit breaker / RCBO';
+      detectedComponentTh = 'เบรกเกอร์ป้องกันไฟรั่ว/ลัดวงจร RCBO';
+    } else if (lower.includes('floodlight') || lower.includes('ฟลัดไลท์') || lower.includes('สปอตไลท์')) {
+      detectedComponent = 'Outdoor floodlight fitting';
+      detectedComponentEn = 'Outdoor floodlight fitting';
+      detectedComponentTh = 'โคมไฟฟลัดไลท์ภายนอก';
+    } else {
+      detectedComponent = 'Lighting fitting / Luminaire';
+      detectedComponentEn = 'Lighting fitting / Luminaire';
+      detectedComponentTh = 'ชุดโคมไฟส่องสว่าง';
+    }
+  } else {
+    detectedComponentEn = detectedComponent;
+    detectedComponentTh = detectedComponent;
+  }
+
+  // 2. Fact Preservation: Area / Zone Detection
+  let detectedArea = (params.zone || '').trim();
+  let areaEn = '';
+  let areaTh = '';
+
+  if (!detectedArea) {
+    if (lower.includes('garden') || lower.includes('สวน')) {
+      detectedArea = 'Outside Garden';
+      areaEn = 'outside garden lighting area';
+      areaTh = 'บริเวณไฟสวนภายนอก';
+    } else if (lower.includes('pool') || lower.includes('สระ')) {
+      detectedArea = 'Swimming Pool Deck';
+      areaEn = 'swimming pool deck area';
+      areaTh = 'บริเวณระเบียงสระว่ายน้ำ';
+    } else if (lower.includes('carport') || lower.includes('โรงรถ')) {
+      detectedArea = 'Carport / Entrance Driveway';
+      areaEn = 'carport and entrance driveway';
+      areaTh = 'บริเวณโรงจอดรถและทางเข้า';
+    } else if (lower.includes('living') || lower.includes('ห้องนั่งเล่น')) {
+      detectedArea = 'Living Room';
+      areaEn = 'living room area';
+      areaTh = 'บริเวณห้องนั่งเล่น';
+    } else if (lower.includes('kitchen') || lower.includes('ครัว')) {
+      detectedArea = 'Kitchen / Pantry';
+      areaEn = 'kitchen and pantry area';
+      areaTh = 'บริเวณห้องครัว';
+    } else if (lower.includes('terrace') || lower.includes('ระเบียง')) {
+      detectedArea = 'Outdoor Terrace / Balcony';
+      areaEn = 'outdoor terrace and balcony';
+      areaTh = 'บริเวณระเบียงภายนอก';
+    } else {
+      detectedArea = 'Villa Property Grounds';
+      areaEn = 'villa property grounds';
+      areaTh = 'บริเวณพื้นที่ภายในวิลล่า';
+    }
+  } else {
+    areaEn = detectedArea;
+    areaTh = detectedArea;
+  }
+
+  // 3. Fact Preservation: Quantity & Condition
+  const qty = params.quantity || 1;
+  const numQty = typeof qty === 'number' ? qty : parseInt(String(qty), 10) || 1;
+  const condition = params.condition || (lower.includes('trip') || lower.includes('ตัด') ? 'Tripping circuit' : 'Failed / Not working');
+
+  // 4. Bilingual Field Reports (Clean, no unnecessary jargon)
+  const confirmedFactEn = `${numQty} ${detectedComponentEn} at ${areaEn} is confirmed ${condition.toLowerCase()}.`;
+  const confirmedFactTh = `พบ ${detectedComponentTh} ${areaTh} ${condition.includes('Trip') ? 'ทริปตัดวงจร' : 'เสีย/ไม่ติด'} ${numQty} จุด`;
+
+  const customerReportEn = `${numQty > 1 ? `${numQty} units of` : 'One'} ${detectedComponentEn} at the ${areaEn} was found not operating during field inspection.`;
+  const customerReportTh = `พบ${detectedComponentTh} บริเวณ${areaTh} เสีย ${numQty} จุด ในระหว่างการตรวจสอบหน้างาน`;
+
+  // 5. Possible Causes (Distinguished from confirmed facts)
+  const possibleCauses = [
+    {
+      en: 'Lamp filament burn-out or internal LED driver failure',
+      th: 'ไส้หลอดขาด หรือวงจรขับ LED ภายในเสื่อมสภาพตามอายุการใช้งาน',
+      probability: 'High' as const,
+    },
+    {
+      en: 'Moisture ingress or corrosion at bulb holder contacts',
+      th: 'ความชื้นสะสม หรือเกิดคราบออกไซด์บริเวณขั้วสัมผัสหลอดไฟ',
+      probability: 'Medium' as const,
+    },
+    {
+      en: 'Loose branch wiring connector inside fitting or junction box',
+      th: 'จุดต่อสายไฟภายในโคมหรือกล่องพักสายหลวม',
+      probability: 'Medium' as const,
+    },
+    {
+      en: 'Underground or conduit supply cable interruption',
+      th: 'สายไฟใต้ดินหรือในท่อร้อยสายชำรุด (ต้องทดสอบยืนยัน)',
+      probability: 'Low' as const,
+    },
+  ];
+
+  // 6. Recommended Tests (Field verification without guessing)
+  const recommendedTests = [
+    {
+      en: 'Perform line AC voltage test at lamp socket with digital multimeter (expecting ~220-230V AC)',
+      th: 'วัดแรงดันไฟฟ้า AC ที่ขั้วหลอดด้วยดิจิตอลมัลติมิเตอร์ (ค่าปกติประมาณ 220-230V AC)',
+      measurementNeeded: true,
+    },
+    {
+      en: 'Fit certified replacement bulb to verify if light operates normally',
+      th: 'ใส่หลอดไฟอะไหล่ชิ้นใหม่เพื่อทดสอบการทำงานว่าติดเป็นปกติหรือไม่',
+      measurementNeeded: false,
+    },
+    {
+      en: 'Inspect terminal screws, earth grounding integrity, and junction seal',
+      th: 'ตรวจสอบน็อตยึดขั้วสาย ความต่อเนื่องของสายกราวด์ และซีลกันน้ำของโคม',
+      measurementNeeded: false,
+    },
+  ];
+
+  // 7. Case A — SIMPLE RESOLUTION
+  const caseA: ElectricalCaseA = {
+    titleEn: 'Case A — Simple Resolution',
+    titleTh: 'กรณี A — การแก้ไขเบื้องต้น (เปลี่ยนอะไหล่ตรงจุด)',
+    scopeEn: [
+      `Safely isolate lighting circuit at distribution panel`,
+      `Remove failed ${detectedComponentEn} and clean socket contacts`,
+      `Install new certified ${detectedComponentEn}`,
+      `Restore power and verify stable illumination operation`,
+    ],
+    scopeTh: [
+      `ตัดกระแสไฟที่ตู้ควบคุมย่อยเพื่อความปลอดภัย`,
+      `ถอด${detectedComponentTh}ที่เสียออก และทำความสะอาดหน้าสัมผัส`,
+      `ติดตั้ง${detectedComponentTh}มาตรฐานชิ้นใหม่`,
+      `เปิดทดสอบการทำงานของระบบไฟให้สว่างสม่ำเสมอ`,
+    ],
+    completionCriteriaEn: `If the replacement ${detectedComponentEn} lights up and operates stably: Job completed under Case A.`,
+    completionCriteriaTh: `หากใส่หลอดใหม่แล้วไฟติดสว่างทำงานปกติ: ปิดงานได้ทันทีตาม กรณี A`,
+  };
+
+  // 8. Case B — CONDITIONAL ADDITIONAL WORK (Strictly conditional, never assumed!)
+  const caseB: ElectricalCaseB = {
+    titleEn: 'Case B — Conditional Additional Investigation & Repair',
+    titleTh: 'กรณี B — การแก้ไขเพิ่มเติมตามเงื่อนไข (กรณีสายไฟหรือระบบมีปัญหา)',
+    triggerConditionEn: `If test meter confirms NO electrical voltage reaches the fitting, or the replacement bulb still fails to operate due to circuit interruption.`,
+    triggerConditionTh: `หากใช้มิเตอร์วัดแล้วพบว่า "ไม่มีกระแสไฟจ่ายมาถึงโคม" หรือเปลี่ยนหลอดใหม่แล้วยังไม่ติดเนื่องจากสายไฟหรือวงจรขาด`,
+    additionalScopeEn: [
+      `Trace electrical circuit branch from distribution board to light point`,
+      `Inspect intermediate junction boxes, conduits, and exterior switches`,
+      `Perform insulation resistance / continuity test on suspect cable run`,
+      `Repair connection or replace damaged cable segment if fault is confirmed`,
+      `Reseal weatherproof cable entries and retest circuit under full load`,
+    ],
+    additionalScopeTh: [
+      `ไล่เช็กวงจรไฟฟ้าจากตู้เมนย่อยจนถึงจุดติดตั้งโคมไฟ`,
+      `ตรวจเช็กกล่องพักสาย ท่อร้อยสาย และสวิตช์ควบคุมภายนอก`,
+      `วัดค่าความเป็นฉนวนและความต่อเนื่องของสายไฟเพื่อหาจุดชำรุด`,
+      `ซ่อมแซมจุดต่อหรือเปลี่ยนสายไฟช่วงที่ชำรุด (เมื่อตรวจสอบพบจุดเสียชัดเจนแล้วเท่านั้น)`,
+      `ยาแนวซีลกันน้ำเข้ากล่องสายไฟ และทดสอบระบบอีกครั้ง`,
+    ],
+    cautionNoticeEn: `IMPORTANT: Case B is a conditional technical possibility, NOT a confirmed defect. Do NOT state "cable is faulty" to customer until physically verified by multimeter.`,
+    cautionNoticeTh: `ข้อควรระวัง: กรณี B เป็นเพียงขั้นตอนเผื่อไว้ตามเงื่อนไขหน้างาน ห้ามแจ้งลูกค้าว่า "สายไฟขาด" จนกว่าช่างจะวัดมิเตอร์ยืนยันจริง`,
+  };
+
+  // 9. BOQ Materials & Resources (Fact-based, no made-up quantities)
+  const materials: ElectricalBoqMaterial[] = [
+    {
+      nameEn: `${detectedComponentEn} (Certified specification)`,
+      nameTh: `${detectedComponentTh} (สเปกมาตรฐาน มอก.)`,
+      qty,
+      unit: 'pcs',
+    },
+    {
+      nameEn: 'Weatherproof silicone seal / cable gland gasket',
+      nameTh: 'ซิลิโคนกันน้ำ / ปะเก็นยางกันชื้น',
+      qty: 1,
+      unit: 'set',
+    },
+  ];
+
+  const resources: ElectricalBoqResource[] = [
+    {
+      nameEn: 'Digital Multimeter & Voltage Tester Pen',
+      nameTh: 'ดิจิตอลมัลติมิเตอร์ และไขควงวัดไฟ',
+      category: 'Tool',
+    },
+    {
+      nameEn: 'Insulated Electrical Hand Tools & Wire Strippers',
+      nameTh: 'ชุดคีมและไขควงช่างไฟหุ้มฉนวนนิรภัย',
+      category: 'Tool',
+    },
+    {
+      nameEn: 'Certified Electrician / PTL Specialist',
+      nameTh: 'ช่างไฟฟ้า PTL ผู้เชี่ยวชาญ',
+      category: 'Labor',
+    },
+  ];
+
+  // 10. Safe Measurements (Strictly NO fabricated readings)
+  const measurements: ElectricalMeasurements = {
+    voltageAc: 'Not measured / Unknown',
+    insulationResistance: 'Not measured / Unknown',
+    earthResistance: 'Not measured / Unknown',
+    rccbTripCurrent: 'Not measured / Unknown',
+  };
+
+  return {
+    area: detectedArea,
+    component: detectedComponent,
+    condition,
+    quantity: qty,
+    confirmedFactEn,
+    confirmedFactTh,
+    customerReportEn,
+    customerReportTh,
+    possibleCauses,
+    recommendedTests,
+    caseA,
+    caseB,
+    materials,
+    resources,
+    estimatedDuration: '1 - 2 hours',
+    measurements,
+    testResult: 'Pending',
+    activeCase: 'Case A',
+    hasAssessmentStarted: false,
+    customerReportedIssue: customerReportTh,
+    observedFact: confirmedFactTh,
+    confirmedFinding: confirmedFactTh,
+    testPerformed: 'วัดแรงดันไฟฟ้า AC (L-N) และตรวจสอบขั้วหลอด/สวิตช์',
+    testResultText: 'รอการวัดหน้างานจริง (Pending on-site measurement)',
+    recommendedNextTest: 'ทดสอบความต่อเนื่องของสายไฟ (Continuity test) หากใส่หลอดใหม่แล้วยังไม่ติด',
+    unknownItems: 'ยังไม่สามารถยืนยันสภาพสายไฟใต้ดินได้จนกว่าจะใส่หลอดใหม่ทดสอบ',
+    hasCaseChoice: true,
+  };
+}
+

@@ -228,7 +228,8 @@ export const JobsView: React.FC<JobsViewProps> = ({
           return (
             <div
               key={job.id}
-              className="bg-white rounded-2xl border border-slate-200 hover:border-blue-400 p-4 sm:p-5 shadow-xs transition-all flex flex-col lg:flex-row lg:items-center justify-between gap-4 group"
+              onClick={() => onOpenJobInspection(job.id)}
+              className="bg-white rounded-2xl border border-slate-200 hover:border-blue-400 p-4 sm:p-5 shadow-xs hover:shadow-md transition-all flex flex-col lg:flex-row lg:items-center justify-between gap-4 group cursor-pointer active:scale-[0.99]"
             >
               {/* Job Info */}
               <div className="space-y-2 flex-1 min-w-0">
@@ -240,6 +241,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
                   {/* Status Dropdown / Badge */}
                   <select
                     value={job.status}
+                    onClick={(e) => e.stopPropagation()}
                     onChange={(e) => onUpdateJobStatus(job.id, e.target.value as JobStatus)}
                     className={`text-[11px] font-black uppercase px-2.5 py-1 rounded-lg border font-sans cursor-pointer focus:outline-none ${getStatusBadge(
                       job.status
@@ -348,34 +350,51 @@ export const JobsView: React.FC<JobsViewProps> = ({
                   </span>
                 </div>
 
-                {/* PHASE 2: FINANCIAL PILLS STRIP */}
+                {/* FINANCIAL PILLS STRIP */}
                 <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100">
-                  <div className="text-xs font-bold text-slate-800 bg-slate-100/80 px-2.5 py-1 rounded-lg">
-                    Price: <span className="font-mono font-black">฿{financials.customerPrice.toLocaleString()}</span>
-                  </div>
+                  {financials.customerPrice > 0 ? (
+                    <div className="text-xs font-bold text-slate-800 bg-slate-100/80 px-2.5 py-1 rounded-lg">
+                      Price: <span className="font-mono font-black">฿{financials.customerPrice.toLocaleString()}</span>
+                    </div>
+                  ) : (
+                    <div className="text-xs font-bold text-slate-500 bg-slate-100/80 px-2.5 py-1 rounded-lg">
+                      Price: <span className="italic">{isTh ? 'ยังไม่เสนอราคา' : 'Pending'}</span>
+                    </div>
+                  )}
 
-                  <div className="text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg">
-                    Cost: <span className="font-mono">฿{financials.totalCost.toLocaleString()}</span>
-                  </div>
+                  {financials.hasCostEntered ? (
+                    <>
+                      <div className="text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg">
+                        Cost: <span className="font-mono">฿{financials.totalCost.toLocaleString()}</span>
+                      </div>
 
-                  <div className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg">
-                    Profit: <span className="font-mono font-black">฿{financials.netProfit.toLocaleString()}</span>
-                  </div>
+                      <div className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg">
+                        Profit: <span className="font-mono font-black">฿{financials.netProfit.toLocaleString()}</span>
+                      </div>
 
-                  {financials.customerPrice > 0 && (
-                    <span
-                      className={`text-[10px] font-black px-2 py-0.5 rounded border ${getMarginBadge(
-                        financials.profitMargin
-                      )}`}
-                    >
-                      {financials.profitMargin}% margin
-                    </span>
+                      {financials.customerPrice > 0 && (
+                        <span
+                          className={`text-[10px] font-black px-2 py-0.5 rounded border ${getMarginBadge(
+                            financials.profitMargin
+                          )}`}
+                        >
+                          {financials.profitMargin}% margin
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-xs font-medium text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg">
+                      Cost: <span className="italic">{isTh ? 'ยังไม่ได้บันทึกต้นทุน' : 'Not entered'}</span>
+                    </div>
                   )}
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-2 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="flex flex-wrap items-center gap-2 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100"
+              >
                 {onOpenEditJob && (
                   <button
                     onClick={() => onOpenEditJob(job)}

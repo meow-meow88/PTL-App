@@ -3949,6 +3949,49 @@ ${JSON.stringify(currentHardwareItems || [], null, 2)}
     }
   });
 
+  // --------------------------------------------------------------------------
+  // Build & Version Check Endpoint (Cache-Safe)
+  // --------------------------------------------------------------------------
+  app.get("/api/version", (_req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.json({
+      version: "2026.09.23.5",
+      buildDate: "2026-09-23 02:45 UTC",
+      service: "Phuket Trusted Local V2",
+      environment: process.env.NODE_ENV || "development",
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Service Worker & Manifest Route Handler (Always Fresh, Never Stale)
+  // --------------------------------------------------------------------------
+  app.get("/sw.js", (_req: Request, res: Response) => {
+    const swPath = path.join(process.cwd(), "public", "sw.js");
+    res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Service-Worker-Allowed", "/");
+    if (fs.existsSync(swPath)) {
+      res.sendFile(swPath);
+    } else {
+      res.status(404).send("// Service worker not found");
+    }
+  });
+
+  app.get("/manifest.json", (_req: Request, res: Response) => {
+    const manifestPath = path.join(process.cwd(), "public", "manifest.json");
+    res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, must-revalidate");
+    if (fs.existsSync(manifestPath)) {
+      res.sendFile(manifestPath);
+    } else {
+      res.status(404).send("{}");
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const { createServer } = await import("vite");
@@ -3959,8 +4002,31 @@ ${JSON.stringify(currentHardwareItems || [], null, 2)}
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
+
+    // Static assets with fine-grained caching:
+    // - Hashed JS/CSS in /assets: long immutable cache
+    // - HTML / others: must-revalidate
+    app.use(
+      express.static(distPath, {
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith("index.html")) {
+            res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+            res.setHeader("Pragma", "no-cache");
+            res.setHeader("Expires", "0");
+          } else if (filePath.includes("/assets/")) {
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          } else {
+            res.setHeader("Cache-Control", "public, max-age=3600, must-revalidate");
+          }
+        },
+      })
+    );
+
+    // SPA fallback: STRICTLY NO-CACHE for index.html
     app.get("*", (_req: Request, res: Response) => {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

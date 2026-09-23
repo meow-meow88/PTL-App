@@ -28,7 +28,7 @@ export function normalizeJobStatus(status?: string): JobStatus {
     case 'quoted':
       return 'Waiting Approval';
     case 'approved':
-      return 'Scheduled';
+      return 'Approved';
     case 'waiting approval':
     case 'waiting_approval':
       return 'Waiting Approval';
@@ -238,6 +238,14 @@ export interface QuotationServiceItem {
 
 export type DocType = 'quotation' | 'invoice';
 
+export type QuotePurpose =
+  | 'INSPECTION_DIAGNOSIS'
+  | 'CALL_OUT_VISIT'
+  | 'KNOWN_SCOPE_WORK'
+  | 'REPAIR_WORK'
+  | 'INSTALLATION'
+  | 'ESTIMATE_ONLY';
+
 export interface QuotationData {
   refNo: string;
   invoiceNo?: string;
@@ -247,6 +255,11 @@ export interface QuotationData {
   inspectionRef: string;
   validity: string;
   paymentTerm: string;
+  quotePurpose?: QuotePurpose;
+  title?: string;
+  scopeSummary?: string[];
+  exclusions?: string[];
+  importantNotes?: string[];
   hardwareItems: QuotationHardwareItem[];
   serviceItems: QuotationServiceItem[];
   procurementFeeRate: number; // e.g. 0.15 for 15%
@@ -285,6 +298,7 @@ export interface InspectionJob {
   scheduledTime?: string; // e.g. 10:30 AM
   scheduledEndTime?: string; // e.g. 11:30 AM
   appointmentConfirmation?: 'Not Confirmed' | 'Confirmed' | 'Cancelled';
+  isConfirmed?: boolean; // Compatibility alias for appointment confirmation
   scheduleNotes?: string;
   vendorId?: string; // Links to Vendor.id
   recurringServiceId?: string; // Links to RecurringService.id
@@ -327,6 +341,8 @@ export interface InspectionJob {
   homeWatchChecklist?: HomeWatchChecklistItem[];
   evidencePhotos?: EvidencePhoto[];
   siteNotes?: string;
+  siteAccessNotes?: string;
+  customerPhone?: string;
   // Phase 3.9B.1 Team-Ready Architecture Extensions:
   executionMode?: ExecutionMode; // Default: 'OWNER'
   assignedToType?: AssignedToType; // Default: 'OWNER'
@@ -339,6 +355,29 @@ export interface InspectionJob {
   ownerReviewedAt?: string; // ISO string when owner verified
   ownerReviewNote?: string; // Owner's review notes
   lastActivityAt?: string; // Timestamp of latest meaningful work/event
+  technicianSharedAt?: string; // ISO timestamp when job details were shared with technician/vendor
+  electricalAssessment?: ElectricalAssessmentData;
+  cctvAssessment?: CctvAssessmentData;
+  networkAssessment?: NetworkAssessmentData;
+  smartHomeAssessment?: SmartHomeAssessmentData;
+  petAssistanceDetails?: PetAssistanceData;
+  airportAssistanceDetails?: AirportAssistanceData;
+  generalAssistanceDetails?: GeneralAssistanceData;
+  // PTL V2 Authoritative Commercial & Field Lifecycle Fields:
+  scopeConfirmed?: boolean;
+  scopeConfirmedAt?: string;
+  quoteSentAt?: string;
+  customerApprovedAt?: string;
+  fieldWorkCompletedAt?: string;
+  quoteType?: 'inspection' | 'repair' | 'standard';
+  quotePurpose?: QuotePurpose;
+  reportedIssue?: string;
+  observedFact?: string;
+  confirmedFindings?: string;
+  testPerformed?: string;
+  testResultText?: string;
+  recommendedNextTest?: string;
+  unknownItems?: string;
 }
 
 // ====================================================
@@ -476,6 +515,7 @@ export interface JobFinancials {
   totalCost: number;
   netProfit: number;
   profitMargin: number; // Percentage (e.g. 45.0 for 45%)
+  hasCostEntered: boolean; // False if no cost/expense has been recorded
 }
 
 /**
@@ -530,10 +570,25 @@ export function calculateJobFinancials(
     }
   }
 
+  // Also check if vendor or material cost was recorded directly on job
+  if (typeof job.vendorCostActual === 'number' && job.vendorCostActual > 0) {
+    vendorCost += job.vendorCostActual;
+  }
+  if (typeof job.materialCostExpected === 'number' && job.materialCostExpected > 0 && materialCost === 0) {
+    materialCost += job.materialCostExpected;
+  }
+
+  const hasCostEntered =
+    jobExpenses.length > 0 ||
+    (typeof job.vendorCostActual === 'number' && job.vendorCostActual > 0) ||
+    (typeof job.materialCostExpected === 'number' && job.materialCostExpected > 0);
+
   const totalCost = materialCost + travelCost + vendorCost + helperCost + otherCost;
-  const netProfit = customerPrice - totalCost;
+  const netProfit = hasCostEntered ? customerPrice - totalCost : 0;
   const profitMargin =
-    customerPrice > 0 ? Math.round((netProfit / customerPrice) * 10000) / 100 : 0;
+    hasCostEntered && customerPrice > 0
+      ? Math.round((netProfit / customerPrice) * 10000) / 100
+      : 0;
 
   return {
     customerPrice,
@@ -545,6 +600,7 @@ export function calculateJobFinancials(
     totalCost,
     netProfit,
     profitMargin,
+    hasCostEntered,
   };
 }
 
@@ -883,6 +939,7 @@ export type JobEventType =
   | 'JOB_ASSIGNED'
   | 'JOB_STARTED'
   | 'STATUS_CHANGED'
+  | 'APPOINTMENT_CONFIRMED'
   | 'PHOTO_ADDED'
   | 'CHECKLIST_UPDATED'
   | 'ISSUE_REPORTED'
@@ -903,6 +960,172 @@ export interface JobEvent {
   createdAt: string; // ISO string
   summary?: string;
   metadata?: Record<string, any>;
+}
+
+// ====================================================
+// MR. BIG TECHNICAL BRAIN & SPECIALIZED ASSESSMENTS
+// ====================================================
+
+export interface ElectricalCaseA {
+  titleEn: string;
+  titleTh: string;
+  scopeEn: string[];
+  scopeTh: string[];
+  completionCriteriaEn: string;
+  completionCriteriaTh: string;
+  estimatedPriceThb?: number;
+}
+
+export interface ElectricalCaseB {
+  titleEn: string;
+  titleTh: string;
+  triggerConditionEn: string;
+  triggerConditionTh: string;
+  additionalScopeEn: string[];
+  additionalScopeTh: string[];
+  cautionNoticeEn: string;
+  cautionNoticeTh: string;
+  estimatedPriceThb?: number;
+}
+
+export interface ElectricalBoqMaterial {
+  nameEn: string;
+  nameTh: string;
+  qty: string | number;
+  unit: string;
+}
+
+export interface ElectricalBoqResource {
+  nameEn: string;
+  nameTh: string;
+  category: 'Tool' | 'Equipment' | 'Labor';
+}
+
+export interface ElectricalMeasurements {
+  voltageAc?: string; // e.g. "220V" or "Not measured / Unknown"
+  insulationResistance?: string; // e.g. "> 1.0 MΩ" or "Not measured / Unknown"
+  earthResistance?: string; // e.g. "< 5 Ω" or "Not measured / Unknown"
+  rccbTripCurrent?: string; // e.g. "30mA" or "Not measured / Unknown"
+}
+
+export interface ElectricalAssessmentData {
+  area: string; // e.g. "Outside Garden Light"
+  component: string; // e.g. "PAR38 bulb"
+  condition: string; // e.g. "Failed / Not working"
+  quantity: number | string;
+  confirmedFactEn: string;
+  confirmedFactTh: string;
+  customerReportEn: string;
+  customerReportTh: string;
+  possibleCauses: Array<{ en: string; th: string; probability?: 'High' | 'Medium' | 'Low' }>;
+  recommendedTests: Array<{ en: string; th: string; measurementNeeded?: boolean }>;
+  caseA: ElectricalCaseA;
+  caseB: ElectricalCaseB;
+  materials: ElectricalBoqMaterial[];
+  resources: ElectricalBoqResource[];
+  estimatedDuration: string; // e.g. "1 - 2 hours" or "TO CONFIRM"
+  measurements: ElectricalMeasurements;
+  workPerformedNotes?: string;
+  testResult?: 'Pending' | 'Passed' | 'Case B Required' | 'Failed';
+  activeCase?: 'Case A' | 'Case B';
+  hasAssessmentStarted?: boolean;
+  customerReportedIssue?: string;
+  observedFact?: string;
+  confirmedFinding?: string;
+  testPerformed?: string;
+  testResultText?: string;
+  recommendedNextTest?: string;
+  unknownItems?: string;
+  hasCaseChoice?: boolean;
+}
+
+export interface CctvAssessmentData {
+  cameraZone: string;
+  cameraType: 'Dome' | 'Bullet' | 'PTZ' | 'Turret' | 'Solar / 4G' | 'Other';
+  cameraModel?: string;
+  quantity: number;
+  deploymentType: 'New Installation' | 'Repair / Swap' | 'Relocation' | 'Maintenance';
+  storageType: 'NVR / Hard Drive' | 'SD Card' | 'Cloud' | 'None';
+  powerType: 'PoE (802.3af/at)' | '12V DC Adapter' | 'Solar Battery';
+  cableType: 'Cat6 UTP' | 'Cat6 Outdoor' | 'Coaxial RG6' | 'Wireless';
+  mountingHeight: string; // e.g. "2.8m (Requires ladder)"
+  missingInfo: string[];
+  streamingVerified?: boolean;
+  recordingVerified?: boolean;
+  mobileAppVerified?: boolean;
+  workPerformedNotes?: string;
+}
+
+export interface NetworkAssessmentData {
+  issueType: 'Internet Completely Down (LOS Red)' | 'Slow Speed / High Latency' | 'Wi-Fi Dead Zone' | 'Device Offline / IP Conflict' | 'New Network Setup';
+  ispName: 'AIS Fibre' | '3BB' | 'True Online' | 'NT / TOT' | 'Starlink' | 'Other / Unknown';
+  routerModel?: string;
+  accessPointCount?: number;
+  switchType?: 'Unmanaged' | 'PoE Gigabit Switch' | 'Managed VLAN' | 'None';
+  cableStatus?: 'Good' | 'Degraded Cat5e' | 'Requires New Cat6 Run' | 'Untested';
+  speedtestDownloadMbps?: number;
+  speedtestUploadMbps?: number;
+  speedtestPingMs?: number;
+  workPerformedNotes?: string;
+  wifiTestedOk?: boolean;
+}
+
+export interface SmartHomeAssessmentData {
+  ecosystem: 'Tuya / Smart Life' | 'Aqara Home' | 'Apple HomeKit' | 'Sonoff / eWeLink' | 'Zigbee 3.0' | 'Matter / Thread' | 'Other';
+  deviceType: 'Smart Wall Switch' | 'Curtain Motor' | 'Smart Door Lock' | 'Gateway / Hub' | 'Sensor' | 'Smart Plug';
+  roomZone: string;
+  powerConfiguration: 'With Neutral (N-Wire)' | 'No-Neutral (Bypass Capacitor Required)' | 'Battery Powered';
+  physicalSwitchOperating: boolean;
+  gatewayOnline: boolean;
+  rfSignalQuality: 'Strong' | 'Weak / Packet Loss' | 'Offline';
+  bypassCapacitorInstalled?: boolean;
+  workPerformedNotes?: string;
+  automationTestedOk?: boolean;
+}
+
+export interface PetAssistanceData {
+  petName: string;
+  petType: 'Dog' | 'Cat' | 'Bird' | 'Other';
+  breed?: string;
+  clinicName: string;
+  clinicLocation?: string;
+  serviceRequired: 'Routine Checkup' | 'Vaccination' | 'Emergency / Sick' | 'Grooming Transport' | 'Medication Pickup';
+  appointmentDate?: string;
+  appointmentTime?: string;
+  petCarrierProvided?: boolean;
+  specialInstructions?: string;
+  vetExpensesThb?: number;
+  vetReceiptUrl?: string;
+  resultNotes?: string;
+}
+
+export interface AirportAssistanceData {
+  serviceDirection: 'Arrival Pickup' | 'Departure Dropoff';
+  airportName: string; // Default: 'Phuket International Airport (HKT)'
+  flightNumber?: string;
+  scheduledDateTime?: string;
+  passengerCount: number;
+  luggageCount: number;
+  pickupLocation: string;
+  destinationLocation: string;
+  signboardName?: string;
+  vehicleAssigned?: string;
+  driverName?: string;
+  specialNotes?: string;
+  flightStatus?: 'On Schedule' | 'Delayed' | 'Landed' | 'Completed';
+}
+
+export interface GeneralAssistanceData {
+  assistanceCategory: 'Hospital / Medical' | 'Immigration' | 'Embassy / Consulate' | 'Utility / Government' | 'Personal Concierge';
+  facilityName: string;
+  locationAddress?: string;
+  scheduledDateTime?: string;
+  transportProvided?: boolean;
+  interpreterNeeded?: boolean;
+  documentsRequired?: string;
+  specialInstructions?: string;
+  outOfPocketExpensesThb?: number;
+  outcomeSummary?: string;
 }
 
 

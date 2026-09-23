@@ -34,14 +34,31 @@ import {
 } from '../types';
 import { useLanguage } from '../i18n/translations';
 import { formatDateDisplay, formatTime24h } from '../utils/dateTime';
+import { BUILD_VERSION } from '../utils/buildVersion';
 import {
   getLocalizedServiceName,
   isHomeWatchService,
   isRoadsideService,
+  isElectricalService,
+  isCctvService,
+  isNetworkService,
+  isSmartHomeService,
+  isPetAssistanceService,
+  isAirportAssistanceService,
+  isGeneralAssistanceService,
 } from '../utils/serviceWorkflow';
 import { HomeWatchVisitView } from './HomeWatchVisitView';
 import { RoadAssistanceWorkflowView } from './RoadAssistanceWorkflowView';
 import { FlexibleJobWorkflowView } from './FlexibleJobWorkflowView';
+import { ElectricalWorkspaceView } from './workspaces/ElectricalWorkspaceView';
+import { CctvWorkspaceView } from './workspaces/CctvWorkspaceView';
+import { NetworkWifiWorkspaceView } from './workspaces/NetworkWifiWorkspaceView';
+import { SmartHomeWorkspaceView } from './workspaces/SmartHomeWorkspaceView';
+import { PetAssistanceWorkspaceView } from './workspaces/PetAssistanceWorkspaceView';
+import { AirportAssistanceWorkspaceView } from './workspaces/AirportAssistanceWorkspaceView';
+import { GeneralAssistanceWorkspaceView } from './workspaces/GeneralAssistanceWorkspaceView';
+import { CompactAppointmentModal } from './CompactAppointmentModal';
+import { BeforeInspectionWorkspaceView } from './workspaces/BeforeInspectionWorkspaceView';
 
 interface JobWorkspaceViewProps {
   job: InspectionJob;
@@ -58,7 +75,7 @@ interface JobWorkspaceViewProps {
   onOpenUrgentJob: () => void;
   onOpenMultiJob: () => void;
   onOpenReport: () => void;
-  onOpenQuotation: (jobId: string) => void;
+  onOpenQuotation: (jobId: string, action?: 'view' | 'edit' | 'send' | 'preview') => void;
   onOpenQuickEstimate?: () => void;
   onOpenFindingModal?: (item?: any) => void;
   onDeleteFinding?: (itemId: string) => void;
@@ -68,6 +85,8 @@ interface JobWorkspaceViewProps {
   onCompleteJob: () => void;
   onCreateFollowupJob?: (parentJob: InspectionJob, issueNote?: string, checklistItem?: any) => void;
   onDeleteJob?: (jobId: string) => void;
+  onConfirmAppointment?: (jobId: string) => void;
+  onOpenScheduleModal?: (job: InspectionJob) => void;
 }
 
 export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
@@ -95,11 +114,14 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
   onCompleteJob,
   onCreateFollowupJob,
   onDeleteJob,
+  onConfirmAppointment,
+  onOpenScheduleModal,
 }) => {
   const { lang, setLanguage, t } = useLanguage();
   const isTh = lang === 'th';
 
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isApptModalOpen, setIsApptModalOpen] = useState(false);
 
   // Lookup customer and property
   const customer = customers.find((c) => c.id === job.customerId);
@@ -133,77 +155,200 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
 
   // Determine current dominant state and explanation
   const getDominantStateDetails = () => {
-    if (job.status === 'Completed') {
+    // 1. After Field Work / Completed
+    if (job.status === 'Completed' || Boolean(job.completedAt) || Boolean(job.actualCompletedAt) || Boolean(job.fieldWorkFinishedAt)) {
+      const hasInvoice = invoices.some((i) => i.jobId === job.id);
+      const isPaid = job.paymentStatus === 'Paid' || invoices.some((i) => i.jobId === job.id && i.status === 'Paid');
+      if (isPaid) {
+        return {
+          stage: 'after_field_work',
+          badge: isTh ? 'เสร็จสมบูรณ์ • ชำระแล้ว' : 'Completed • Paid',
+          badgeBg: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+          explanation: isTh
+            ? 'บันทึกการทำงาน หลักฐาน และรับชำระเงินเรียบร้อยแล้ว'
+            : 'All work, evidence, and payment completed.',
+          nextStep: isTh ? 'ดูรายงานส่งมอบงาน' : 'View handover report',
+          actionLabel: isTh ? 'ดูรายงาน / สรุปงาน' : 'View Site Report',
+          actionColor: 'bg-emerald-600 hover:bg-emerald-500 text-white',
+          onAction: onOpenReport,
+        };
+      }
+      if (hasInvoice) {
+        return {
+          stage: 'after_field_work',
+          badge: isTh ? 'ส่งงานแล้ว • รอชำระเงิน' : 'Completed • Awaiting Payment',
+          badgeBg: 'bg-amber-100 text-amber-950 border-amber-300 font-bold',
+          explanation: isTh
+            ? 'ออกใบแจ้งหนี้แล้ว รอลูกค้าชำระเงินคงค้าง'
+            : 'Invoiced; awaiting customer payment.',
+          nextStep: isTh ? 'บันทึกการรับชำระเงิน' : 'Record received payment',
+          actionLabel: isTh ? 'รับชำระเงิน' : 'Collect Payment',
+          actionColor: 'bg-emerald-600 hover:bg-emerald-500 text-white',
+          onAction: () => {
+            const inv = invoices.find((i) => i.jobId === job.id);
+            const bal = inv?.balanceDue ?? inv?.totalAmount ?? job.quotation?.serviceItems?.[0]?.amount ?? 2500;
+            onRecordPayment(job.id, bal);
+          },
+        };
+      }
       return {
-        badge: isTh ? 'เสร็จสมบูรณ์' : 'Completed',
-        badgeBg: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+        stage: 'after_field_work',
+        badge: isTh ? 'งานหน้างานเสร็จแล้ว' : 'Field Work Finished',
+        badgeBg: 'bg-blue-100 text-blue-950 border-blue-300 font-bold',
         explanation: isTh
-          ? 'บันทึกการทำงานและหลักฐานเรียบร้อยแล้ว'
-          : 'All work and evidence have been recorded.',
-        nextStep: isTh ? 'ออกใบแจ้งหนี้ / รับชำระเงิน' : 'Invoice or collect payment',
-        actionLabel: isTh ? 'ดูรายงาน / ใบแจ้งหนี้' : 'View Report / Invoice',
-        actionColor: 'bg-emerald-600 hover:bg-emerald-500 text-white',
+          ? 'ช่างทำงานเสร็จสิ้นแล้ว พร้อมออกใบแจ้งหนี้และรายงาน'
+          : 'Field work finished; ready to invoice and report.',
+        nextStep: isTh ? 'ออกใบแจ้งหนี้เรียกเก็บเงิน' : 'Create final invoice',
+        actionLabel: isTh ? 'ออกใบแจ้งหนี้' : 'Create Invoice',
+        actionColor: 'bg-blue-600 hover:bg-blue-500 text-white',
         onAction: onOpenReport,
       };
     }
 
-    if (job.status === 'In Progress' || job.visitStartedAt) {
+    // 2. During Repair Execution
+    if (
+      (job.status === 'In Progress' || job.repairStartedAt) &&
+      job.scopeConfirmed &&
+      (Boolean(job.customerApprovedAt) || Boolean(job.repairStartedAt) || job.status === 'Approved')
+    ) {
+      return {
+        stage: 'during_repair',
+        badge: isTh ? 'กำลังซ่อมแซมหน้างาน' : 'Repair In Progress',
+        badgeBg: 'bg-blue-100 text-blue-900 border-blue-300',
+        explanation: isTh
+          ? 'ลูกค้ารับทราบขอบเขตแล้ว กำลังดำเนินการแก้ไขหน้างาน'
+          : 'Repair work actively ongoing on site.',
+        nextStep: isTh ? 'ทดสอบการทำงานและจบงานหน้างาน' : 'Verify operation and finish field work',
+        actionLabel: isTh ? 'เสร็จสิ้นงานหน้างาน' : 'Finish Field Work',
+        actionColor: 'bg-emerald-600 hover:bg-emerald-500 text-white',
+        onAction: () => {
+          onUpdateJob((prev) => ({
+            ...prev,
+            status: 'Completed',
+            actualCompletedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString(),
+            fieldWorkFinishedAt: new Date().toISOString(),
+          }));
+          onCompleteJob();
+        },
+      };
+    }
+
+    // 3. Repair Quote Stage
+    const hasRepairWork = Boolean(job.quotation?.serviceItems?.some((i) => i.isRepairWork || i.item > 1));
+    if (
+      job.scopeConfirmed &&
+      (Boolean(job.repairQuoteSentAt) || job.status === 'Waiting Approval' || hasRepairWork)
+    ) {
+      const isApproved = job.customerApprovalStatus === 'Approved' || job.status === 'Approved';
+      if (isApproved) {
+        return {
+          stage: 'repair_quote',
+          badge: isTh ? 'ลูกค้าอนุมัติซ่อมแล้ว' : 'Repair Quote Approved',
+          badgeBg: 'bg-emerald-100 text-emerald-900 border-emerald-300 font-bold',
+          explanation: isTh
+            ? 'ลูกค้ายืนยันอนุมัติค่าซ่อมแล้ว พร้อมเริ่มดำเนินการ'
+            : 'Customer approved repair quote. Ready to start repair.',
+          nextStep: isTh ? 'เริ่มดำเนินการซ่อมแซม' : 'Start repair work',
+          actionLabel: isTh ? 'เริ่มงานซ่อม' : 'Start Repair',
+          actionColor: 'bg-blue-600 hover:bg-blue-500 text-white',
+          onAction: () => {
+            onUpdateJob((prev) => ({
+              ...prev,
+              status: 'In Progress',
+              repairStartedAt: new Date().toISOString(),
+            }));
+          },
+        };
+      }
+      return {
+        stage: 'repair_quote',
+        badge: isTh ? 'รอลูกค้าอนุมัติค่าซ่อม' : 'Repair Quote Ready',
+        badgeBg: 'bg-amber-100 text-amber-900 border-amber-300 font-bold',
+        explanation: isTh
+          ? 'ส่งใบเสนอราคาซ่อมแล้ว รอลูกค้ายืนยันงบประมาณ'
+          : 'Repair quote ready; awaiting customer approval.',
+        nextStep: isTh ? 'ส่งใบเสนอราคาซ่อมให้ลูกค้า' : 'Send repair quote to customer',
+        actionLabel: isTh ? 'ส่งใบเสนอราคาซ่อม' : 'Send Repair Quote',
+        actionColor: 'bg-amber-600 hover:bg-amber-500 text-white',
+        onAction: () => onOpenQuotation(job.id, 'send'),
+      };
+    }
+
+    // 4. Scope Ready (Scope confirmed, ready for Molly repair pricing)
+    if (job.scopeConfirmed) {
+      return {
+        stage: 'scope_ready',
+        badge: isTh ? 'ยืนยันขอบเขตงานแล้ว' : 'Scope Confirmed',
+        badgeBg: 'bg-indigo-100 text-indigo-900 border-indigo-300 font-bold',
+        explanation: isTh
+          ? 'ช่างยืนยันข้อเท็จจริงและผลตรวจแล้ว พร้อมส่งต่อให้ Molly ทำราคาซ่อม'
+          : 'Technical facts confirmed. Ready for Molly repair pricing.',
+        nextStep: isTh ? 'ส่งต่อให้ Molly ทำราคาค่าอะไหล่และค่าแรง' : 'Send scope to Molly for pricing',
+        actionLabel: isTh ? 'ส่งต่อให้ Molly' : 'Send Scope to Molly',
+        actionColor: 'bg-amber-600 hover:bg-amber-500 text-white font-black',
+        onAction: () => {
+          if (onOpenQuickEstimate) onOpenQuickEstimate();
+        },
+      };
+    }
+
+    // 5. During Inspection (In Progress or visit started, scope NOT confirmed)
+    if (job.status === 'In Progress' || job.visitStartedAt || job.siteArrivedAt) {
       const isHomeWatch = isHomeWatchService(job.serviceType, job);
       return {
-        badge: isTh ? 'กำลังทำงาน' : 'In Progress',
-        badgeBg: 'bg-blue-100 text-blue-900 border-blue-300 animate-pulse',
+        stage: 'during_inspection',
+        badge: isTh ? 'กำลังเข้าตรวจหน้างาน' : 'Inspection Active',
+        badgeBg: 'bg-blue-100 text-blue-900 border-blue-300 animate-pulse font-bold',
         explanation: isHomeWatch
           ? isTh
             ? `กำลังตรวจเช็กสภาพวิลล่า (เริ่มเมื่อ ${formatTime24h(job.visitStartedAt)})`
             : `Inspection active (started at ${formatTime24h(job.visitStartedAt)})`
           : isTh
-          ? 'กำลังดำเนินการหน้างาน'
-          : 'Work actively ongoing at location.',
-        nextStep: isTh ? 'บันทึกรายการตรวจและรูปภาพ' : 'Complete checklist and capture photos',
-        actionLabel: isTh ? 'ปิดงาน / สรุปผล' : 'Complete Work',
-        actionColor: 'bg-blue-600 hover:bg-blue-500 text-white',
-        onAction: onCompleteJob,
+          ? 'กำลังดำเนินการตรวจเช็คหน้างานและบันทึกข้อเท็จจริง'
+          : 'Field inspection in progress. Preserving facts and tests.',
+        nextStep: isTh ? 'บันทึกผลการตรวจเช็กกับ Mr. Big' : 'Record field findings with Mr. Big',
+        actionLabel: isTh ? 'บันทึกกับ Mr. Big' : 'Talk to Mr. Big',
+        actionColor: 'bg-blue-600 hover:bg-blue-500 text-white font-black',
+        onAction: () => {
+          const el = document.getElementById('mr-big-assessment-card');
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth' });
+          } else if (onOpenFindingModal) {
+            onOpenFindingModal();
+          }
+        },
       };
     }
 
-    if (job.status === 'Waiting Approval' || job.status === 'Quoted') {
+    // 6. Before Inspection: Unconfirmed vs Confirmed
+    const isApptConfirmed = job.appointmentConfirmation === 'Confirmed' || job.isConfirmed === true;
+    if (!isApptConfirmed) {
       return {
-        badge: isTh ? 'รอลูกค้าอนุมัติ' : 'Waiting Approval',
-        badgeBg: 'bg-amber-100 text-amber-900 border-amber-300',
+        stage: 'before_inspection',
+        badge: isTh ? 'ยังไม่ยืนยันนัด' : 'Appointment not confirmed',
+        badgeBg: 'bg-amber-100 text-amber-950 border-amber-300 font-bold',
         explanation: isTh
-          ? 'ส่งใบเสนอราคาแล้ว รอลูกค้ายืนยันงบประมาณ'
-          : 'Quotation sent; waiting for customer confirmation.',
-        nextStep: isTh ? 'ติดตามลูกค้าทาง WhatsApp' : 'Follow up with customer via WhatsApp',
-        actionLabel: isTh ? 'ดูใบเสนอราคา' : 'View Quotation',
-        actionColor: 'bg-amber-600 hover:bg-amber-500 text-white',
-        onAction: () => onOpenQuotation(job.id),
+          ? `กำหนดนัด ${formattedDate} เวลา ${formattedTime || 'ตามตกลง'} (รอยืนยันนัดหมายกับลูกค้า)`
+          : `Scheduled for ${formattedDate} at ${formattedTime || 'TBD'} (Awaiting customer confirmation)`,
+        nextStep: isTh ? 'ยืนยันวันเวลากับลูกค้า' : 'Confirm scheduled time with customer',
+        actionLabel: isTh ? 'ยืนยันนัดหมาย' : 'Confirm Appointment',
+        actionColor: 'bg-amber-500 hover:bg-amber-400 text-slate-950 font-black shadow-xs',
+        onAction: () => setIsApptModalOpen(true),
       };
     }
 
-    if (job.status === 'Waiting Vendor' || job.vendorStatus === 'Vendor Confirmed') {
-      return {
-        badge: isTh ? 'รอช่าง/ร้านค้า' : 'Waiting Vendor',
-        badgeBg: 'bg-purple-100 text-purple-900 border-purple-300',
-        explanation: isTh
-          ? `มอบหมายช่างภายนอกแล้ว (${job.assignedVendorName || 'ช่างคู่สัญญา'})`
-          : `External vendor assigned (${job.assignedVendorName || 'Partner'}).`,
-        nextStep: isTh ? 'ประสานเวลาถึงหน้างาน' : 'Coordinate vendor ETA to location',
-        actionLabel: isTh ? 'เปิดบันทึกช่าง' : 'Open Vendor Log',
-        actionColor: 'bg-purple-600 hover:bg-purple-500 text-white',
-        onAction: () => {},
-      };
-    }
-
-    // Default Scheduled
+    // 7. Before Inspection: Confirmed
     return {
-      badge: isTh ? 'นัดหมายแล้ว' : 'Scheduled',
-      badgeBg: 'bg-slate-100 text-slate-800 border-slate-300',
+      stage: 'before_inspection',
+      badge: isTh ? 'ยืนยันนัดแล้ว • พร้อมเข้าตรวจ' : 'Appointment confirmed',
+      badgeBg: 'bg-emerald-100 text-emerald-950 border-emerald-300 font-bold',
       explanation: isTh
-        ? `กำหนดนัด ${formattedDate} เวลา ${formattedTime || 'ตามตกลง'}`
-        : `Scheduled for ${formattedDate} at ${formattedTime || 'TBD'}`,
-      nextStep: isTh ? 'กดเริ่มงานเมื่อถึงสถานที่' : 'Start visit upon arrival',
-      actionLabel: isTh ? 'เริ่มทำงานทันที' : 'Start Visit Now',
-      actionColor: 'bg-blue-600 hover:bg-blue-500 text-white ring-2 ring-blue-400/50',
+        ? `กำหนดนัด ${formattedDate} เวลา ${formattedTime || 'ตามตกลง'} (ยืนยันนัดหมายเรียบร้อย)`
+        : `Confirmed for ${formattedDate} at ${formattedTime || 'TBD'}`,
+      nextStep: isTh ? 'กดเริ่มเข้าตรวจเมื่อถึงสถานที่' : 'Start inspection upon arrival on site',
+      actionLabel: isTh ? 'เริ่มเข้าตรวจ' : 'Start Inspection',
+      actionColor: 'bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow-xs',
       onAction: () => {
         onUpdateJob((prev) => ({
           ...prev,
@@ -399,158 +544,204 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
 
       {/* ========================================================================= */}
       {/* 2. TOP OPERATIONAL COMMAND BLOCK (Answers the 8 Core Questions) */}
+      {/* Shown only when in active stages (During Inspection, Scope Ready, etc.) */}
       {/* ========================================================================= */}
-      <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-3 sm:pt-4 w-full min-w-0">
-        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-xs space-y-4 w-full min-w-0">
-          {/* Row A: Customer & Location */}
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-3 border-b border-slate-100">
-            <div className="min-w-0">
-              {/* Customer Title + Group */}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-xs font-black text-slate-400 uppercase tracking-wide">
-                  {job.id}
-                </span>
-                <span className="text-slate-300">•</span>
-                <h1 className="text-lg sm:text-xl font-black text-slate-900 truncate">
-                  {customer?.name || job.customerName || 'Walk-in Customer'}
-                </h1>
-                {(customer?.customerGroup || job.customerGroup) && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                    {customer?.customerGroup || job.customerGroup}
+      {stateDetails.stage !== 'before_inspection' && (
+        <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-3 sm:pt-4 w-full min-w-0">
+          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-xs space-y-3.5 w-full min-w-0">
+            {/* Row A: Customer & Location */}
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="min-w-0">
+                {/* Customer Title + Group */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-xs font-black text-slate-400 uppercase tracking-wide">
+                    {job.id}
                   </span>
-                )}
-              </div>
+                  <span className="text-slate-300">•</span>
+                  <h1 className="text-lg sm:text-xl font-black text-slate-900 truncate">
+                    {customer?.name || job.customerName || 'Walk-in Customer'}
+                  </h1>
+                  {(customer?.customerGroup || job.customerGroup) && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                      {customer?.customerGroup || job.customerGroup}
+                    </span>
+                  )}
+                </div>
 
-              {/* Service & Villa Name */}
-              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm font-bold text-slate-700">
-                <span className="text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
-                  {getLocalizedServiceName(job.serviceType, lang)}
-                </span>
-                <span>•</span>
-                <span className="text-slate-900">
-                  {job.villaName || property?.name || job.propertyLocation || 'Location TBD'}
-                </span>
-                {job.propertyLocation && (
-                  <span className="text-slate-500 font-normal flex items-center gap-0.5">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span className="truncate">{job.propertyLocation}</span>
+                {/* Service & Villa Name */}
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm font-bold text-slate-700">
+                  <span className="text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                    {getLocalizedServiceName(job.serviceType, lang)}
                   </span>
-                )}
-              </div>
+                  <span>•</span>
+                  <span className="text-slate-900">
+                    {job.villaName || property?.name || job.propertyLocation || 'Location TBD'}
+                  </span>
+                  {job.propertyLocation && (
+                    <span className="text-slate-500 font-normal flex items-center gap-0.5">
+                      <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">{job.propertyLocation}</span>
+                    </span>
+                  )}
+                </div>
 
-              {/* Scheduled Date & Time in 24h format */}
-              <div className="mt-1.5 flex items-center gap-3 text-xs text-slate-500 font-semibold">
-                <span className="flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span>{formattedDate}</span>
-                </span>
-                <span className="flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span>{formattedTime ? `${formattedTime} (24h)` : isTh ? 'ไม่ระบุเวลา' : 'Time TBD'}</span>
-                </span>
-              </div>
-            </div>
-
-            {/* Quick Contact Buttons (Call & WhatsApp) */}
-            <div className="flex items-center gap-2 self-start shrink-0">
-              {phoneVal && (
-                <a
-                  href={`tel:${cleaned}`}
-                  className="min-h-[40px] px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-colors"
-                  title="Call Customer"
-                >
-                  <Phone className="w-3.5 h-3.5 text-slate-600" />
-                  <span className="hidden sm:inline">{isTh ? 'โทร' : 'Call'}</span>
-                </a>
-              )}
-              {waUrl && (
-                <a
-                  href={waUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
-                  title="WhatsApp Customer"
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  <span>WhatsApp</span>
-                </a>
-              )}
-            </div>
-          </div>
-
-          {/* Row B: Current State & Dominant Action */}
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  {isTh ? 'สถานะปัจจุบัน' : 'CURRENT STATUS'}:
-                </span>
-                <span
-                  className={`text-xs font-black uppercase px-2.5 py-0.5 rounded-full border ${stateDetails.badgeBg}`}
-                >
-                  {stateDetails.badge}
-                </span>
-              </div>
-              <p className="text-xs sm:text-sm font-semibold text-slate-700 mt-1">
-                {stateDetails.explanation}
-              </p>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                <span className="font-bold text-slate-700">{isTh ? 'ขั้นตอนถัดไป:' : 'Next Step:'}</span>{' '}
-                {stateDetails.nextStep}
-              </p>
-            </div>
-
-            {/* Primary Action Button (Touch target ≥44px) */}
-            <button
-              id="job-workspace-btn-primary-action"
-              type="button"
-              onClick={stateDetails.onAction}
-              className={`min-h-[44px] px-5 py-2.5 rounded-xl font-extrabold text-xs sm:text-sm shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0 whitespace-nowrap active:scale-98 ${stateDetails.actionColor}`}
-            >
-              <span>{stateDetails.actionLabel}</span>
-              <ChevronRight className="w-4 h-4 stroke-[3]" />
-            </button>
-          </div>
-
-          {/* Row C: Progress Stepper */}
-          <div className="pt-2">
-            <div className="grid grid-cols-4 gap-1 sm:gap-2">
-              {steps.map((s, idx) => (
-                <div key={idx} className="flex flex-col items-center text-center">
-                  <div className="w-full flex items-center mb-1">
-                    <div
-                      className={`h-1.5 flex-1 rounded-full ${
-                        s.done
-                          ? 'bg-emerald-500'
-                          : s.active
-                          ? 'bg-blue-600'
-                          : 'bg-slate-200'
-                      }`}
-                    />
-                  </div>
-                  <span
-                    className={`text-[10px] sm:text-xs font-bold leading-tight truncate ${
-                      s.active
-                        ? 'text-blue-700 font-extrabold'
-                        : s.done
-                        ? 'text-emerald-700 font-semibold'
-                        : 'text-slate-400'
-                    }`}
-                  >
-                    {isTh ? s.labelTh : s.labelEn}
+                {/* Scheduled Date & Time in 24h format */}
+                <div className="mt-1.5 flex items-center gap-3 text-xs text-slate-500 font-semibold">
+                  <span className="flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span>{formattedDate}</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span>{formattedTime ? `${formattedTime} (24h)` : isTh ? 'ไม่ระบุเวลา' : 'Time TBD'}</span>
                   </span>
                 </div>
-              ))}
+              </div>
+
+              {/* Quick Contact Buttons (Call & WhatsApp) */}
+              <div className="flex items-center gap-2 self-start shrink-0">
+                {phoneVal && (
+                  <a
+                    href={`tel:${cleaned}`}
+                    className="min-h-[40px] px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                    title="Call Customer"
+                  >
+                    <Phone className="w-3.5 h-3.5 text-slate-600" />
+                    <span className="hidden sm:inline">{isTh ? 'โทร' : 'Call'}</span>
+                  </a>
+                )}
+                {waUrl && (
+                  <a
+                    href={waUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
+                    title="WhatsApp Customer"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>WhatsApp</span>
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {/* Reported Issue Display */}
+            {(job.requestDescription || job.notes) && (
+              <div className="px-3.5 py-2.5 rounded-xl bg-amber-50/80 border border-amber-200/70 flex items-start gap-2.5 text-xs">
+                <span className="font-black text-amber-900 shrink-0 text-[10px] uppercase bg-amber-200/70 px-2 py-0.5 rounded-md mt-0.5">
+                  {isTh ? 'ปัญหาที่แจ้ง' : 'Reported Issue'}
+                </span>
+                <span className="text-slate-900 font-bold leading-relaxed">
+                  {job.requestDescription || job.notes}
+                </span>
+              </div>
+            )}
+
+            {/* Row B: Current State & Dominant Action */}
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {isTh ? 'สถานะปัจจุบัน' : 'CURRENT STATUS'}:
+                  </span>
+                  <span
+                    className={`text-xs font-black uppercase px-2.5 py-0.5 rounded-full border ${stateDetails.badgeBg}`}
+                  >
+                    {stateDetails.badge}
+                  </span>
+                </div>
+                <p className="text-xs sm:text-sm font-semibold text-slate-700 mt-1">
+                  {stateDetails.explanation}
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  <span className="font-bold text-slate-700">{isTh ? 'ขั้นตอนถัดไป:' : 'Next Step:'}</span>{' '}
+                  {stateDetails.nextStep}
+                </p>
+              </div>
+
+              {/* Dominant Primary Action Button (Touch target ≥44px) */}
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                <button
+                  id="job-workspace-btn-primary-action"
+                  type="button"
+                  onClick={stateDetails.onAction}
+                  className={`min-h-[44px] px-5 py-2.5 rounded-xl font-extrabold text-xs sm:text-sm shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0 whitespace-nowrap active:scale-98 ${stateDetails.actionColor}`}
+                >
+                  <span>{stateDetails.actionLabel}</span>
+                  <ChevronRight className="w-4 h-4 stroke-[3]" />
+                </button>
+              </div>
+            </div>
+
+            {/* Row C: Progress Stepper */}
+            <div className="pt-2">
+              <div className="grid grid-cols-4 gap-1 sm:gap-2">
+                {steps.map((s, idx) => (
+                  <div key={idx} className="flex flex-col items-center text-center">
+                    <div className="w-full flex items-center mb-1">
+                      <div
+                        className={`h-1.5 flex-1 rounded-full ${
+                          s.done
+                            ? 'bg-emerald-500'
+                            : s.active
+                            ? 'bg-blue-600'
+                            : 'bg-slate-200'
+                        }`}
+                      />
+                    </div>
+                    <span
+                      className={`text-[10px] sm:text-xs font-bold leading-tight truncate ${
+                        s.active
+                          ? 'text-blue-700 font-extrabold'
+                          : s.done
+                          ? 'text-emerald-700 font-semibold'
+                          : 'text-slate-400'
+                      }`}
+                    >
+                      {isTh ? s.labelTh : s.labelEn}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* ========================================================================= */}
-      {/* 3. CORE WORKFLOW ENGINE RENDERER (Clean, No Old V1 Headers) */}
+      {/* 3. CORE WORKFLOW ENGINE RENDERER (Clean, Progressive Disclosure) */}
       {/* ========================================================================= */}
       <main className="max-w-4xl mx-auto w-full px-3 sm:px-6 py-4 flex-1 min-w-0">
-        {isHomeWatchService(job.serviceType, job) ? (
+        {stateDetails.stage === 'before_inspection' ? (
+          <BeforeInspectionWorkspaceView
+            job={job}
+            customer={customer}
+            property={property}
+            formattedDate={formattedDate}
+            formattedTime={formattedTime}
+            isApptConfirmed={job.appointmentConfirmation === 'Confirmed' || job.isConfirmed === true}
+            isTh={isTh}
+            lang={lang}
+            invoices={invoices}
+            expenses={expenses}
+            onConfirmAppointment={() => setIsApptModalOpen(true)}
+            onStartInspection={() => {
+              onUpdateJob((prev) => ({
+                ...prev,
+                status: 'In Progress',
+                visitStartedAt: new Date().toISOString(),
+                actualStartedAt: new Date().toISOString(),
+              }));
+            }}
+            onOpenQuotation={onOpenQuotation}
+            onOpenScheduleModal={() => {
+              if (onOpenScheduleModal) onOpenScheduleModal(job);
+              else setIsApptModalOpen(true);
+            }}
+            onOpenQuickEstimate={onOpenQuickEstimate}
+            onUpdateJob={onUpdateJob}
+          />
+        ) : isHomeWatchService(job.serviceType, job) ? (
           <HomeWatchVisitView
             job={job}
             onUpdateJob={onUpdateJob}
@@ -581,6 +772,126 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
             onCompleteJob={onCompleteJob}
             onResumePreviousJob={(prevId) => onSelectJob(prevId)}
           />
+        ) : isElectricalService(job.serviceType) ? (
+          <ElectricalWorkspaceView
+            job={job}
+            vendors={vendors}
+            invoices={invoices}
+            expenses={expenses}
+            onUpdateJob={onUpdateJob}
+            onRecordPayment={(jobId, amt) => onRecordPayment(jobId, amt)}
+            onAssignVendor={(vendor) => onAssignVendor(vendor)}
+            onCompleteJob={onCompleteJob}
+            onOpenReport={onOpenReport}
+            onOpenQuotation={onOpenQuotation}
+            onOpenQuickEstimate={onOpenQuickEstimate || (() => {})}
+            onAddExpense={onAddExpense}
+            onOpenSwitchJob={onOpenMultiJob}
+            jobsCount={jobsList.length}
+            currentJobIndex={jobsList.findIndex((j) => j.id === job.id)}
+          />
+        ) : isCctvService(job.serviceType) ? (
+          <CctvWorkspaceView
+            job={job}
+            vendors={vendors}
+            invoices={invoices}
+            expenses={expenses}
+            onUpdateJob={onUpdateJob}
+            onRecordPayment={(jobId, amt) => onRecordPayment(jobId, amt)}
+            onAssignVendor={(vendor) => onAssignVendor(vendor)}
+            onCompleteJob={onCompleteJob}
+            onOpenReport={onOpenReport}
+            onOpenQuickEstimate={onOpenQuickEstimate || (() => {})}
+            onAddExpense={onAddExpense}
+            onOpenSwitchJob={onOpenMultiJob}
+            jobsCount={jobsList.length}
+            currentJobIndex={jobsList.findIndex((j) => j.id === job.id)}
+          />
+        ) : isNetworkService(job.serviceType) ? (
+          <NetworkWifiWorkspaceView
+            job={job}
+            vendors={vendors}
+            invoices={invoices}
+            expenses={expenses}
+            onUpdateJob={onUpdateJob}
+            onRecordPayment={(jobId, amt) => onRecordPayment(jobId, amt)}
+            onAssignVendor={(vendor) => onAssignVendor(vendor)}
+            onCompleteJob={onCompleteJob}
+            onOpenReport={onOpenReport}
+            onOpenQuickEstimate={onOpenQuickEstimate || (() => {})}
+            onAddExpense={onAddExpense}
+            onOpenSwitchJob={onOpenMultiJob}
+            jobsCount={jobsList.length}
+            currentJobIndex={jobsList.findIndex((j) => j.id === job.id)}
+          />
+        ) : isSmartHomeService(job.serviceType) ? (
+          <SmartHomeWorkspaceView
+            job={job}
+            vendors={vendors}
+            invoices={invoices}
+            expenses={expenses}
+            onUpdateJob={onUpdateJob}
+            onRecordPayment={(jobId, amt) => onRecordPayment(jobId, amt)}
+            onAssignVendor={(vendor) => onAssignVendor(vendor)}
+            onCompleteJob={onCompleteJob}
+            onOpenReport={onOpenReport}
+            onOpenQuickEstimate={onOpenQuickEstimate || (() => {})}
+            onAddExpense={onAddExpense}
+            onOpenSwitchJob={onOpenMultiJob}
+            jobsCount={jobsList.length}
+            currentJobIndex={jobsList.findIndex((j) => j.id === job.id)}
+          />
+        ) : isPetAssistanceService(job.serviceType) ? (
+          <PetAssistanceWorkspaceView
+            job={job}
+            vendors={vendors}
+            invoices={invoices}
+            expenses={expenses}
+            onUpdateJob={onUpdateJob}
+            onRecordPayment={(jobId, amt) => onRecordPayment(jobId, amt)}
+            onAssignVendor={(vendor) => onAssignVendor(vendor)}
+            onCompleteJob={onCompleteJob}
+            onOpenReport={onOpenReport}
+            onOpenQuickEstimate={onOpenQuickEstimate || (() => {})}
+            onAddExpense={onAddExpense}
+            onOpenSwitchJob={onOpenMultiJob}
+            jobsCount={jobsList.length}
+            currentJobIndex={jobsList.findIndex((j) => j.id === job.id)}
+          />
+        ) : isAirportAssistanceService(job.serviceType) ? (
+          <AirportAssistanceWorkspaceView
+            job={job}
+            vendors={vendors}
+            invoices={invoices}
+            expenses={expenses}
+            onUpdateJob={onUpdateJob}
+            onRecordPayment={(jobId, amt) => onRecordPayment(jobId, amt)}
+            onAssignVendor={(vendor) => onAssignVendor(vendor)}
+            onCompleteJob={onCompleteJob}
+            onOpenReport={onOpenReport}
+            onOpenQuickEstimate={onOpenQuickEstimate || (() => {})}
+            onAddExpense={onAddExpense}
+            onOpenSwitchJob={onOpenMultiJob}
+            jobsCount={jobsList.length}
+            currentJobIndex={jobsList.findIndex((j) => j.id === job.id)}
+          />
+        ) : isGeneralAssistanceService(job.serviceType) ? (
+          <GeneralAssistanceWorkspaceView
+            job={job}
+            vendors={vendors}
+            invoices={invoices}
+            expenses={expenses}
+            onUpdateJob={onUpdateJob}
+            onRecordPayment={(jobId, amt) => onRecordPayment(jobId, amt)}
+            onAssignVendor={(vendor) => onAssignVendor(vendor)}
+            onCompleteJob={onCompleteJob}
+            onOpenReport={onOpenReport}
+            onOpenQuickEstimate={onOpenQuickEstimate || (() => {})}
+            onAddExpense={onAddExpense}
+            onOpenSwitchJob={onOpenMultiJob}
+            jobsCount={jobsList.length}
+            currentJobIndex={jobsList.findIndex((j) => j.id === job.id)}
+          />
         ) : (
           <FlexibleJobWorkflowView
             job={job}
@@ -605,7 +916,10 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
         {/* Safety & Administrative Controls at the Bottom */}
         <div className="mt-8 pt-4 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-700">PTL V2 Job Workspace</span>
+            <span className="font-bold text-slate-700">PTL V2</span>
+            <span className="font-mono text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+              v{BUILD_VERSION}
+            </span>
             <span>•</span>
             <button
               type="button"
@@ -636,6 +950,31 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
           </button>
         </div>
       </main>
+
+      {/* Compact Appointment Modal */}
+      <CompactAppointmentModal
+        isOpen={isApptModalOpen}
+        job={job}
+        onClose={() => setIsApptModalOpen(false)}
+        onConfirmAppointment={(jobId) => {
+          if (onConfirmAppointment) {
+            onConfirmAppointment(jobId);
+          } else {
+            onUpdateJob((prev) => ({
+              ...prev,
+              isConfirmed: true,
+              appointmentConfirmation: 'Confirmed',
+              appointmentConfirmedAt: new Date().toISOString(),
+            }));
+          }
+        }}
+        onOpenReschedule={(j) => {
+          setIsApptModalOpen(false);
+          if (onOpenScheduleModal) {
+            onOpenScheduleModal(j);
+          }
+        }}
+      />
     </div>
   );
 };

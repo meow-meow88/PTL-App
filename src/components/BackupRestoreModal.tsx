@@ -29,6 +29,8 @@ import {
   Task,
 } from '../types';
 import { getLocalSnapshots, LocalSnapshot, restoreLocalSnapshot } from '../utils/storage';
+import { BUILD_VERSION, BUILD_DATE } from '../utils/buildVersion';
+import { clearAppCachesAndReload } from '../utils/pwaManager';
 
 interface ServerBackup {
   filename: string;
@@ -539,17 +541,40 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="mt-5 pt-4 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
-          <div className="flex items-center gap-1.5">
-            <HardDrive className="w-3.5 h-3.5 text-slate-400" />
-            <span>ระบบบันทึกอัตโนมัติทุกครั้งที่มีการพิมพ์หรืออัปโหลดรูป</span>
+        <div className="mt-5 pt-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+          <div className="flex flex-col sm:flex-row items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <HardDrive className="w-3.5 h-3.5 text-slate-400" />
+              <span>ระบบบันทึกอัตโนมัติทุกครั้งที่มีการพิมพ์หรืออัปโหลดรูป</span>
+            </div>
+            <span className="hidden sm:inline text-slate-300">•</span>
+            <div className="font-mono text-[10px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+              Build: {BUILD_VERSION} ({BUILD_DATE})
+            </div>
           </div>
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-lg transition-colors cursor-pointer"
-          >
-            ปิดหน้าต่าง
-          </button>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm('ต้องการล้างแคชไฟล์เบราว์เซอร์และรีโหลดหน้าจอใช่หรือไม่? (ข้อมูลงานที่บันทึกไว้จะไม่สูญหาย)')) {
+                  clearAppCachesAndReload();
+                }
+              }}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 hover:text-slate-900 hover:bg-slate-50 font-bold transition-colors cursor-pointer text-xs"
+              title="ล้างเฉพาะแคชไฟล์เว็บ เพื่อดึงเวอร์ชันล่าสุด ไม่กระทบข้อมูลงาน"
+            >
+              <RefreshCw className="w-3 h-3 text-slate-500" />
+              <span>ล้างแคช & รับเวอร์ชันล่าสุด</span>
+            </button>
+
+            <button
+              onClick={onClose}
+              className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-lg transition-colors cursor-pointer"
+            >
+              ปิดหน้าต่าง
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -49,6 +49,8 @@ interface ReportScreenProps {
   onOpenMollyHardware?: () => void;
   onOpenMollyExpress?: () => void;
   onOpenGoogleDrive?: () => void;
+  initialTab?: ActiveDocTab;
+  initialAction?: 'view' | 'edit' | 'send' | 'preview';
 }
 
 type ActiveDocTab = 'photo-evidence' | 'findings-report' | 'quotation';
@@ -61,12 +63,21 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
   onOpenMollyHardware,
   onOpenMollyExpress,
   onOpenGoogleDrive,
+  initialTab,
+  initialAction,
 }) => {
   const [activeTab, setActiveTab] = useState<ActiveDocTab>(() => {
-    if (job.status === 'Quoted' || (job.quotation?.hardwareItems && job.quotation.hardwareItems.length > 0)) {
+    if (initialTab) return initialTab;
+    if (initialAction === 'edit' || initialAction === 'send' || initialAction === 'preview' || initialAction === 'view') {
       return 'quotation';
     }
-    return 'photo-evidence';
+    if (job.quotation && ((job.quotation.serviceItems && job.quotation.serviceItems.length > 0) || (job.quotation.hardwareItems && job.quotation.hardwareItems.length > 0))) {
+      return 'quotation';
+    }
+    if (job.status === 'Quoted' || job.status === 'Waiting Approval') {
+      return 'quotation';
+    }
+    return 'quotation';
   });
   const [docSubMode, setDocSubMode] = useState<'quotation' | 'invoice'>('quotation');
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
@@ -83,6 +94,29 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
   const { logoUrl, updateLogo } = useCustomLogo();
   const reportLogoInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingReportLogo, setIsUploadingReportLogo] = useState(false);
+
+  // Sync initial action reactively
+  useEffect(() => {
+    if (initialAction === 'edit') {
+      setActiveTab('quotation');
+      setIsQuickEstimateOpen(true);
+      setIsShareModalOpen(false);
+      setIsDocPreviewModalOpen(false);
+    } else if (initialAction === 'send') {
+      setActiveTab('quotation');
+      setIsShareModalOpen(true);
+      setIsQuickEstimateOpen(false);
+      setIsDocPreviewModalOpen(false);
+    } else if (initialAction === 'preview') {
+      setActiveTab('quotation');
+      setPreviewModalDoc('quotation');
+      setIsDocPreviewModalOpen(true);
+      setIsQuickEstimateOpen(false);
+      setIsShareModalOpen(false);
+    } else if (initialAction === 'view') {
+      setActiveTab('quotation');
+    }
+  }, [initialAction]);
 
   const handleReportLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -105,7 +139,7 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
   const [driveInput, setDriveInput] = useState(job.driveFolderUrl || '');
   const [copiedDrive, setCopiedDrive] = useState(false);
   const [isDriveWarningModalOpen, setIsDriveWarningModalOpen] = useState(false);
-  const [isQuickEstimateOpen, setIsQuickEstimateOpen] = useState(false);
+  const [isQuickEstimateOpen, setIsQuickEstimateOpen] = useState(() => initialAction === 'edit');
   const [quickEstimateEditServiceIndex, setQuickEstimateEditServiceIndex] = useState<number | null>(null);
   const [quickEstimateEditHardwareIndex, setQuickEstimateEditHardwareIndex] = useState<number | null>(null);
 
@@ -127,12 +161,12 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
   };
 
   // WhatsApp share modal state
-  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(() => initialAction === 'send');
   const [copiedShareSummary, setCopiedShareSummary] = useState(false);
 
   // Fullscreen in-app document preview modal state
-  const [isDocPreviewModalOpen, setIsDocPreviewModalOpen] = useState(false);
-  const [previewModalDoc, setPreviewModalDoc] = useState<ActiveDocTab>('photo-evidence');
+  const [isDocPreviewModalOpen, setIsDocPreviewModalOpen] = useState(() => initialAction === 'preview');
+  const [previewModalDoc, setPreviewModalDoc] = useState<ActiveDocTab>(initialTab || 'quotation');
 
   // Quotation Page Layout state (single page vs separate terms page 2)
   const [separateTermsPage, setSeparateTermsPage] = useState<boolean>(() => {

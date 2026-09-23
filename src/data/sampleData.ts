@@ -505,7 +505,52 @@ export const sampleJobBowCCTV: InspectionJob = {
   },
 };
 
+export const sampleJobKMarkElectrical: InspectionJob = {
+  id: 'PTL-ELEC-20260920-MARK',
+  clientId: 'CL-MARK-001',
+  villaName: 'Villa 5',
+  customerName: 'K. Mark',
+  customerGroup: 'villa_owner',
+  propertyLocation: 'Villa 5, Phuket',
+  serviceType: 'Electrical Troubleshooting & Rectification',
+  status: 'Scheduled',
+  appointmentConfirmation: 'Not Confirmed',
+  isConfirmed: false,
+  requestDescription: 'Sub-breaker No.1 trips when water heater or high load is turned on',
+  inspectionDate: '20 Sep 2026',
+  scheduledDate: '2026-09-20',
+  scheduledTime: '10:00 AM',
+  createdAt: '2026-09-19T08:00:00.000Z',
+  inspector: 'Mr. Big & Field Technicians',
+  documentRef: 'PTL-QT-2026-MARK',
+  notes: 'Reported Issue: Sub-breaker No.1 trips. Initial inspection / fault-finding scheduled.',
+  items: [],
+  quotation: {
+    refNo: 'PTL-QT-2026-MARK',
+    date: '19 Sep 2026',
+    inspectionRef: 'PTL-ELEC-20260920-MARK',
+    validity: '15 Days',
+    paymentTerm: 'Pay After Inspection (0% Deposit)',
+    depositPercent: 0,
+    hardwareItems: [],
+    serviceItems: [
+      {
+        item: 1,
+        description: 'Initial Electrical Inspection & Fault-Finding Diagnostic',
+        detail: 'ช่างเทคนิคลงพื้นที่ตรวจสอบจุดลัดวงจร วัดแรงดันไฟฟ้า และตรวจเช็คขั้วต่อ/เบรกเกอร์ (Initial Inspection)',
+        estimatedSchedule: '20-09-2026 (10:00 AM)',
+        qty: '1 Job',
+        amount: 2500,
+      },
+    ],
+    procurementFeeRate: 0,
+    terms: ['ค่าบริการตรวจสอบหน้างานและวินิจฉัยจุดเสีย ชำระหลังตรวจเช็คเสร็จสิ้น'],
+    contingencies: ['หากพบจุดชำรุดที่ต้องเปลี่ยนอะไหล่ จะประเมินราคาซ่อม (Repair Quote) เพิ่มเติม'],
+  },
+};
+
 export const defaultDayJobs: InspectionJob[] = [
+  sampleJobKMarkElectrical,
   sampleJobBowCCTV,
   sampleJobKMazen,
   sampleJobRobertMiller,
@@ -513,6 +558,13 @@ export const defaultDayJobs: InspectionJob[] = [
 ];
 
 export const sampleCustomerPresets = [
+  {
+    group: 'villa_owner' as const,
+    name: 'K. Mark',
+    location: 'Villa 5, Phuket',
+    service: 'Electrical Troubleshooting & Rectification',
+    label: 'K. Mark: ระบบไฟฟ้าทริป เบรกเกอร์ตัด (Villa 5)',
+  },
   {
     group: 'villa_owner' as const,
     name: 'คุณโบว์ (K. Bow)',

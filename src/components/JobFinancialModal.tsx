@@ -132,12 +132,25 @@ export const JobFinancialModal: React.FC<JobFinancialModalProps> = ({
               <span className="text-[10px] font-bold uppercase text-slate-500 block">
                 Total Job Cost
               </span>
-              <div className="text-base sm:text-lg font-black text-rose-700 font-mono mt-0.5">
-                ฿{financials.totalCost.toLocaleString()}
-              </div>
-              <span className="text-[10px] text-slate-400 mt-1 block">
-                {jobExpenses.length} expense items
-              </span>
+              {financials.hasCostEntered ? (
+                <>
+                  <div className="text-base sm:text-lg font-black text-rose-700 font-mono mt-0.5">
+                    ฿{financials.totalCost.toLocaleString()}
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1 block">
+                    {jobExpenses.length} expense items
+                  </span>
+                </>
+              ) : (
+                <>
+                  <div className="text-sm font-bold text-slate-500 italic mt-1">
+                    Not entered
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1 block">
+                    Add expenses or vendor cost
+                  </span>
+                </>
+              )}
             </div>
 
             {/* 3. Net Profit */}
@@ -145,14 +158,25 @@ export const JobFinancialModal: React.FC<JobFinancialModalProps> = ({
               <span className="text-[10px] font-bold uppercase text-slate-500 block">
                 Net Profit
               </span>
-              <div
-                className={`text-base sm:text-lg font-black font-mono mt-0.5 ${
-                  financials.netProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'
-                }`}
-              >
-                ฿{financials.netProfit.toLocaleString()}
-              </div>
-              <span className="text-[10px] text-slate-400 mt-1 block">In pocket</span>
+              {financials.hasCostEntered ? (
+                <>
+                  <div
+                    className={`text-base sm:text-lg font-black font-mono mt-0.5 ${
+                      financials.netProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'
+                    }`}
+                  >
+                    ฿{financials.netProfit.toLocaleString()}
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1 block">In pocket</span>
+                </>
+              ) : (
+                <>
+                  <div className="text-sm font-bold text-slate-400 italic mt-1">
+                    Pending costs
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1 block">Requires cost entry</span>
+                </>
+              )}
             </div>
 
             {/* 4. Profit Margin */}
@@ -161,13 +185,19 @@ export const JobFinancialModal: React.FC<JobFinancialModalProps> = ({
                 Profit Margin
               </span>
               <div className="mt-1">
-                <span
-                  className={`text-xs sm:text-sm font-black px-2 py-0.5 rounded border inline-block ${getMarginBadge(
-                    financials.profitMargin
-                  )}`}
-                >
-                  {financials.profitMargin}%
-                </span>
+                {financials.hasCostEntered && financials.customerPrice > 0 ? (
+                  <span
+                    className={`text-xs sm:text-sm font-black px-2 py-0.5 rounded border inline-block ${getMarginBadge(
+                      financials.profitMargin
+                    )}`}
+                  >
+                    {financials.profitMargin}%
+                  </span>
+                ) : (
+                  <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-block">
+                    —
+                  </span>
+                )}
               </div>
             </div>
           </div>

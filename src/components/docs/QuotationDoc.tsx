@@ -70,7 +70,7 @@ export const QuotationDoc: React.FC<QuotationDocProps> = ({
     {
       item: 1,
       description: 'On-Site Technical Diagnostics & Investigation',
-      detail: 'งานช่างเทคนิคลงพื้นที่ตรวจสอบและวิเคราะห์สาเหตุปัญหา (Mr. Big Field Audit)',
+      detail: 'งานช่างเทคนิคลงพื้นที่ตรวจสอบและวิเคราะห์สาเหตุปัญหา (Technical Inspection & Diagnostics)',
       estimatedSchedule: 'Immediate / Completed',
       qty: '1 Job',
       amount: 2500,
@@ -92,7 +92,15 @@ export const QuotationDoc: React.FC<QuotationDocProps> = ({
   const grandTotal = hardwareSubtotal + procurementFee + servicesSubtotal;
 
   const invoiceNumber = q.invoiceNo || refNumber.replace('PTL-QT-', 'PTL-INV-');
-  const depositPct = q.depositPercent || 50;
+  const depositPct =
+    q.depositPercent !== undefined
+      ? q.depositPercent
+      : paymentTermText.toLowerCase().includes('after inspection') ||
+        (paymentTermText.toLowerCase().includes('completion') && !paymentTermText.includes('50%'))
+      ? 0
+      : paymentTermText.toLowerCase().includes('100%') || paymentTermText.toLowerCase().includes('advance')
+      ? 100
+      : 50;
   const depositAmount = grandTotal * (depositPct / 100);
   const balanceAmount = grandTotal - depositAmount;
 
@@ -101,7 +109,11 @@ export const QuotationDoc: React.FC<QuotationDocProps> = ({
     : [
         'Workmanship Guarantee / การรับประกันงานช่าง: All on-site labor, technical installations, and system configurations are warrantied for 90 days from handover.',
         'Equipment & Parts Warranty / การรับประกันอุปกรณ์: Hardware and replacement items carry original manufacturer warranties (minimum 1 year for new electronic equipment).',
-        'Payment Terms & Mobilization / เงื่อนไขการชำระเงิน: 50% mobilization deposit upon quote confirmation; remaining 50% payable upon final testing and client handover.',
+        depositPct === 0
+          ? `Payment Terms & Settlement / เงื่อนไขการชำระเงิน: 100% payable upon completion of service / inspection and report delivery (${paymentTermText}).`
+          : depositPct === 100
+          ? 'Payment Terms & Advance / เงื่อนไขการชำระเงิน: 100% advance payment required prior to technician mobilization.'
+          : `Payment Terms & Mobilization / เงื่อนไขการชำระเงิน: ${depositPct}% mobilization deposit upon quote confirmation; remaining ${100 - depositPct}% payable upon final testing and client handover.`,
         'Site Access & Utilities / การเข้าพื้นที่และสาธารณูปโภค: Client or villa management provides safe access, electricity, and water supply during work hours.',
         'Rescheduling Notice / การเลื่อนนัดหมาย: At least 24 hours advance notification is kindly requested for any appointment adjustments.',
       ];
@@ -382,11 +394,11 @@ export const QuotationDoc: React.FC<QuotationDocProps> = ({
               <div className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
                 <span>ยังไม่มีรายการจัดซื้ออุปกรณ์ในใบเสนอราคานี้</span>
                 <span className="text-[10px] bg-blue-200/80 text-blue-800 px-1.5 py-0.2 rounded font-semibold">
-                  Molly Smart Sourcing
+                  Auto Sourcing
                 </span>
               </div>
               <p className="text-[11px] text-blue-800 mt-0.5">
-                ให้ Molly ฝ่ายประสานงานจัดซื้อช่วยสืบราคาตลาดภูเก็ต คำนวณค่าแรง และใส่รายการอุปกรณ์ให้แบบอัตโนมัติ
+                ดึงรายการอุปกรณ์และอะไหล่มาตรฐานภูเก็ต พร้อมคำนวณค่าจัดหาและค่าแรงอัตโนมัติ
               </p>
             </div>
           </div>
@@ -395,7 +407,7 @@ export const QuotationDoc: React.FC<QuotationDocProps> = ({
             onClick={onTriggerMolly}
             className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 bg-[#102a4e] hover:bg-blue-900 text-white font-bold rounded-lg text-xs transition-colors shrink-0 shadow-xs cursor-pointer active:scale-95"
           >
-            <span>⚡ สั่งให้ Molly คำนวณราคาเลย</span>
+            <span>⚡ คำนวณรายการอุปกรณ์อัตโนมัติ</span>
           </button>
         </div>
       )}
@@ -534,7 +546,7 @@ export const QuotationDoc: React.FC<QuotationDocProps> = ({
                           onClick={onTriggerMolly}
                           className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-800 text-xs font-bold rounded-lg border border-blue-200 transition-colors cursor-pointer shadow-2xs"
                         >
-                          <span>⚡ ให้ Molly คำนวณและดึงรายการอุปกรณ์อัตโนมัติ</span>
+                          <span>⚡ คำนวณและดึงรายการอุปกรณ์มาตรฐานอัตโนมัติ</span>
                         </button>
                       )}
                     </div>
@@ -745,8 +757,14 @@ export const QuotationDoc: React.FC<QuotationDocProps> = ({
 
           <div className="mt-2.5 pt-2 text-[11px] text-slate-600 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-2">
             <div>
-              <span className="font-bold text-slate-800">Deposit Schedule: </span>
-              <span>50% Mobilization Deposit ({formatCurrency(depositAmount)} THB) • 50% Handover Balance ({formatCurrency(balanceAmount)} THB)</span>
+              <span className="font-bold text-slate-800">Deposit Schedule / เงื่อนไขการชำระ: </span>
+              <span>
+                {depositPct === 0
+                  ? `Pay After Inspection / Upon Completion (${formatCurrency(grandTotal)} THB)`
+                  : depositPct === 100
+                  ? `100% Advance Payment (${formatCurrency(grandTotal)} THB)`
+                  : `${depositPct}% Mobilization Deposit (${formatCurrency(depositAmount)} THB) • ${100 - depositPct}% Handover Balance (${formatCurrency(balanceAmount)} THB)`}
+              </span>
             </div>
             <div className="text-slate-500">
               Currency: Thai Baht (THB)

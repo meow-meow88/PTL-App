@@ -17,6 +17,10 @@ import {
   Check,
   CreditCard,
   User,
+  Sparkles,
+  Send,
+  Receipt,
+  CheckCircle,
 } from 'lucide-react';
 import { InspectionJob, Customer, Property, Vendor } from '../types';
 import { useLanguage } from '../i18n/translations';
@@ -24,6 +28,7 @@ import {
   getLocalizedServiceName,
   getDominantJobState,
   getPrimaryJobAction,
+  getAppointmentStatus,
 } from '../utils/serviceWorkflow';
 import { formatTime24h, formatDateDisplay } from '../utils/dateTime';
 
@@ -34,12 +39,15 @@ interface JobCardProps {
   vendor?: Vendor;
   showDate?: boolean;
   onOpenInspection: (jobId: string) => void;
-  onOpenQuotation: (jobId: string) => void;
+  onOpenQuotation: (jobId: string, action?: 'view' | 'edit' | 'send' | 'preview') => void;
   onOpenScheduleModal?: (job: InspectionJob) => void;
   onOpenAssignVendorModal?: (job: InspectionJob) => void;
   onConfirmAppointment?: (jobId: string) => void;
+  onOpenCompactAppointment?: (job: InspectionJob) => void;
   onOpenEditJob?: (job: InspectionJob) => void;
   onUpdateJobStatus?: (jobId: string, status: InspectionJob['status']) => void;
+  onCustomerApprove?: (jobId: string) => void;
+  onFinishFieldWork?: (jobId: string) => void;
   onSelectProperty?: (propertyId: string) => void;
   onSelectCustomer?: (customerId: string) => void;
 }
@@ -55,8 +63,11 @@ export const JobCard: React.FC<JobCardProps> = ({
   onOpenScheduleModal,
   onOpenAssignVendorModal,
   onConfirmAppointment,
+  onOpenCompactAppointment,
   onOpenEditJob,
   onUpdateJobStatus,
+  onCustomerApprove,
+  onFinishFieldWork,
   onSelectProperty,
   onSelectCustomer,
 }) => {
@@ -103,6 +114,7 @@ export const JobCard: React.FC<JobCardProps> = ({
   // Calculated dominant state and primary action
   const dominantState = getDominantJobState(job, lang);
   const primaryAction = getPrimaryJobAction(job, lang);
+  const apptStatus = getAppointmentStatus(job, lang);
 
   // Formatted service name and location
   const serviceTitle = getLocalizedServiceName(job.serviceType, lang);
@@ -117,17 +129,61 @@ export const JobCard: React.FC<JobCardProps> = ({
   // Handle primary action execution
   const handleExecutePrimaryAction = () => {
     switch (primaryAction.type) {
+      case 'assess_mr_big':
+        onOpenInspection(job.id);
+        break;
+      case 'create_inspection_quote':
+      case 'create_quote':
+      case 'quick_quote':
+        onOpenQuotation(job.id, 'edit');
+        break;
+      case 'send_quote':
+        onOpenQuotation(job.id, 'send');
+        break;
+      case 'customer_approved':
+        if (onCustomerApprove) {
+          onCustomerApprove(job.id);
+        } else if (onUpdateJobStatus) {
+          onUpdateJobStatus(job.id, 'Approved');
+        }
+        break;
+      case 'record_deposit':
+        onOpenQuotation(job.id);
+        break;
+      case 'schedule_job':
+        if (onOpenScheduleModal) {
+          onOpenScheduleModal(job);
+        } else {
+          onOpenInspection(job.id);
+        }
+        break;
       case 'confirm_appointment':
-        if (onConfirmAppointment) {
+        if (onOpenCompactAppointment) {
+          onOpenCompactAppointment(job);
+        } else if (onConfirmAppointment) {
           onConfirmAppointment(job.id);
         } else if (onUpdateJobStatus) {
           onUpdateJobStatus(job.id, 'Scheduled');
         }
         break;
       case 'resume_job':
-      case 'start_job':
       case 'open_job':
         onOpenInspection(job.id);
+        break;
+      case 'start_job':
+        if (onUpdateJobStatus && (!job.visitStartedAt || job.status !== 'In Progress')) {
+          onUpdateJobStatus(job.id, 'In Progress');
+        }
+        onOpenInspection(job.id);
+        break;
+      case 'finish_field_work':
+        if (onFinishFieldWork) {
+          onFinishFieldWork(job.id);
+        } else if (onUpdateJobStatus) {
+          onUpdateJobStatus(job.id, 'Completed');
+        } else {
+          onOpenInspection(job.id);
+        }
         break;
       case 'contact_customer':
         if (custWa) {
@@ -154,7 +210,68 @@ export const JobCard: React.FC<JobCardProps> = ({
           onOpenInspection(job.id);
         }
         break;
+      case 'create_invoice_collect':
       case 'record_payment':
+        onOpenQuotation(job.id);
+        break;
+      case 'close_job':
+        if (onUpdateJobStatus) {
+          onUpdateJobStatus(job.id, 'Completed');
+        } else {
+          onOpenInspection(job.id);
+        }
+        break;
+      case 'view_report':
+        onOpenQuotation(job.id);
+        break;
+      default:
+        onOpenInspection(job.id);
+        break;
+    }
+  };
+
+  // Handle secondary action execution
+  const handleExecuteSecondaryAction = () => {
+    if (!primaryAction.secondaryAction) return;
+    switch (primaryAction.secondaryAction.type) {
+      case 'edit_job':
+        onOpenInspection(job.id);
+        break;
+      case 'quick_quote':
+        onOpenQuotation(job.id, 'edit');
+        break;
+      case 'assess_mr_big':
+        onOpenInspection(job.id);
+        break;
+      case 'follow_up_customer':
+        if (custWa) {
+          window.open(custWa, '_blank');
+        } else if (custPhone) {
+          window.location.href = `tel:${cleanPhone(custPhone)}`;
+        } else {
+          onOpenInspection(job.id);
+        }
+        break;
+      case 'finish_field_work':
+        if (onFinishFieldWork) {
+          onFinishFieldWork(job.id);
+        } else if (onUpdateJobStatus) {
+          onUpdateJobStatus(job.id, 'Completed');
+        } else {
+          onOpenInspection(job.id);
+        }
+        break;
+      case 'schedule_job':
+        if (onOpenScheduleModal) {
+          onOpenScheduleModal(job);
+        } else {
+          onOpenInspection(job.id);
+        }
+        break;
+      case 'record_payment':
+        onOpenQuotation(job.id);
+        break;
+      case 'view_report':
         onOpenQuotation(job.id);
         break;
       default:
@@ -366,25 +483,46 @@ export const JobCard: React.FC<JobCardProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* ROW 3: DATE • TIME (Strict 24-Hour format) */}
+      {/* ROW 3: DATE • TIME (Strict 24-Hour format) + SEPARATE APPOINTMENT STATUS */}
       {/* ========================================================================= */}
-      <div className="flex items-center gap-2 text-xs font-mono font-bold text-slate-700 mb-2.5">
-        <span className="flex items-center gap-1">
-          <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          <span>{dateLabel}</span>
-        </span>
-        <span className="text-slate-300">•</span>
-        <span className="flex items-center gap-1 text-blue-700">
-          <Clock className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-          <span>{time24}</span>
-        </span>
+      <div className="flex items-center justify-between gap-2 text-xs font-mono font-bold text-slate-700 mb-2.5">
+        <div className="flex items-center gap-2 truncate">
+          <span className="flex items-center gap-1">
+            <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span>{dateLabel}</span>
+          </span>
+          <span className="text-slate-300">•</span>
+          <span className="flex items-center gap-1 text-blue-700">
+            <Clock className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+            <span>{time24}</span>
+          </span>
+        </div>
+
+        {/* Dedicated Appointment Status badge - strictly separated from commercial approval! */}
+        {job.scheduledDate && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onOpenCompactAppointment) {
+                onOpenCompactAppointment(job);
+              } else if (onConfirmAppointment && !apptStatus.isConfirmed) {
+                onConfirmAppointment(job.id);
+              }
+            }}
+            className={`text-[10px] px-2 py-0.5 rounded-md border shrink-0 cursor-pointer hover:opacity-85 transition-opacity ${apptStatus.badgeClass}`}
+            title={apptStatus.isConfirmed ? 'Appointment Confirmed' : 'Click to confirm appointment'}
+          >
+            {apptStatus.label}
+          </button>
+        )}
       </div>
 
       {/* ========================================================================= */}
-      {/* ROW 4 & 5: ONE DOMINANT STATUS BADGE & ONE PRIMARY NEXT ACTION */}
+      {/* ROW 4 & 5: ONE DOMINANT STAGE BADGE & ONE PRIMARY NEXT ACTION */}
       {/* ========================================================================= */}
-      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
-        {/* ONE Dominant State Badge */}
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+        {/* ONE Dominant Commercial State Badge */}
         <div className="min-w-0">
           <span
             className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs tracking-wide truncate ${dominantState.badgeClass}`}
@@ -393,24 +531,50 @@ export const JobCard: React.FC<JobCardProps> = ({
           </span>
         </div>
 
-        {/* ONE Primary Next Action Button (≥44px touch target) */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleExecutePrimaryAction();
-          }}
-          className={`min-h-[44px] px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm transition-all cursor-pointer select-none active:scale-98 flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap ${primaryAction.buttonClass}`}
-        >
-          {primaryAction.type === 'confirm_appointment' && <Check className="w-4 h-4 stroke-[3]" />}
-          {primaryAction.type === 'resume_job' && <Play className="w-4 h-4 fill-current" />}
-          {primaryAction.type === 'start_job' && <Play className="w-4 h-4 fill-current" />}
-          {primaryAction.type === 'contact_customer' && <MessageSquare className="w-4 h-4" />}
-          {primaryAction.type === 'contact_vendor' && <Phone className="w-4 h-4" />}
-          {primaryAction.type === 'assign_vendor' && <Truck className="w-4 h-4" />}
-          {primaryAction.type === 'record_payment' && <CreditCard className="w-4 h-4" />}
-          <span>{primaryAction.label}</span>
-        </button>
+        {/* ONE Primary Next Action Button + Optional ONE Small Secondary Action */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {primaryAction.secondaryAction && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleExecuteSecondaryAction();
+              }}
+              className={`min-h-[40px] px-2.5 sm:px-3 py-1.5 rounded-xl text-xs transition-all cursor-pointer select-none active:scale-98 flex items-center justify-center font-bold ${
+                primaryAction.secondaryAction.buttonClass ||
+                'text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200'
+              }`}
+            >
+              <span>{primaryAction.secondaryAction.label}</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleExecutePrimaryAction();
+            }}
+            className={`min-h-[44px] px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm transition-all cursor-pointer select-none active:scale-98 flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap ${primaryAction.buttonClass}`}
+          >
+            {primaryAction.type === 'assess_mr_big' && <Sparkles className="w-4 h-4 text-amber-300" />}
+            {primaryAction.type === 'create_quote' && <FileText className="w-4 h-4" />}
+            {primaryAction.type === 'send_quote' && <Send className="w-4 h-4" />}
+            {primaryAction.type === 'customer_approved' && <Check className="w-4 h-4 stroke-[3]" />}
+            {primaryAction.type === 'schedule_job' && <Calendar className="w-4 h-4" />}
+            {primaryAction.type === 'confirm_appointment' && <Check className="w-4 h-4 stroke-[3]" />}
+            {primaryAction.type === 'resume_job' && <Play className="w-4 h-4 fill-current" />}
+            {primaryAction.type === 'start_job' && <Play className="w-4 h-4 fill-current" />}
+            {primaryAction.type === 'contact_customer' && <MessageSquare className="w-4 h-4" />}
+            {primaryAction.type === 'contact_vendor' && <Phone className="w-4 h-4" />}
+            {primaryAction.type === 'assign_vendor' && <Truck className="w-4 h-4" />}
+            {primaryAction.type === 'record_payment' && <CreditCard className="w-4 h-4" />}
+            {primaryAction.type === 'create_invoice_collect' && <Receipt className="w-4 h-4" />}
+            {primaryAction.type === 'close_job' && <CheckCircle className="w-4 h-4" />}
+            {primaryAction.type === 'view_report' && <FileText className="w-4 h-4" />}
+            <span>{primaryAction.label}</span>
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -55,7 +55,10 @@ interface MyDayViewProps {
   onOpenRecurringModal?: () => void;
   onOpenAssignVendorModal?: (job: InspectionJob) => void;
   onConfirmAppointment?: (jobId: string) => void;
+  onOpenCompactAppointment?: (job: InspectionJob) => void;
   onOpenEditJob?: (job: InspectionJob) => void;
+  onCustomerApprove?: (jobId: string) => void;
+  onFinishFieldWork?: (jobId: string) => void;
 }
 
 export const MyDayView: React.FC<MyDayViewProps> = ({
@@ -78,7 +81,10 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
   onOpenRecurringModal,
   onOpenAssignVendorModal,
   onConfirmAppointment,
+  onOpenCompactAppointment,
   onOpenEditJob,
+  onCustomerApprove,
+  onFinishFieldWork,
 }) => {
   const { lang, t } = useLanguage();
   const isTh = lang === 'th';
@@ -342,7 +348,8 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
               return (
                 <div
                   key={`att-inv-${inv.id}`}
-                  className="p-3 rounded-xl border border-rose-200 bg-rose-50/40 flex flex-col justify-between"
+                  onClick={() => onSelectInvoice && onSelectInvoice(inv.id)}
+                  className="p-3 rounded-xl border border-rose-200 bg-rose-50/40 flex flex-col justify-between cursor-pointer hover:shadow-md transition-all active:scale-[0.99]"
                 >
                   <div>
                     <div className="flex items-center justify-between gap-1 mb-1">
@@ -389,13 +396,26 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
             {unconfirmedJobs.map((j) => (
               <div
                 key={`att-unconf-${j.id}`}
-                className="p-3 rounded-xl border border-amber-200 bg-amber-50/40 flex flex-col justify-between"
+                onClick={() => onOpenJobInspection(j.id)}
+                className="p-3 rounded-xl border border-amber-200 bg-amber-50/40 flex flex-col justify-between cursor-pointer hover:shadow-md transition-all active:scale-[0.99]"
               >
                 <div>
                   <div className="flex items-center justify-between gap-1 mb-1">
-                    <span className="text-[10px] font-black uppercase text-amber-900 bg-amber-200/80 px-1.5 py-0.2 rounded">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onOpenCompactAppointment) {
+                          onOpenCompactAppointment(j);
+                        } else if (onConfirmAppointment) {
+                          onConfirmAppointment(j.id);
+                        }
+                      }}
+                      className="text-[10px] font-black uppercase text-amber-900 bg-amber-200/80 hover:bg-amber-300 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+                      title={isTh ? 'คลิกเพื่อจัดการนัดหมาย' : 'Click to manage appointment'}
+                    >
                       {t.dominantStates?.appointmentNotConfirmed || (isTh ? 'ยังไม่ยืนยันนัด' : 'Appointment Not Confirmed')}
-                    </span>
+                    </button>
                     <span className="font-mono text-xs font-bold text-slate-700">
                       {formatTime24h(j.scheduledTime) || '10:00'}
                     </span>
@@ -411,15 +431,21 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
                 <div className="mt-2.5 pt-2 border-t border-amber-200/60 flex items-center justify-between gap-2">
                   <button
                     type="button"
-                    onClick={() => onOpenJobInspection(j.id)}
-                    className="text-xs font-bold text-slate-600 hover:text-slate-900"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenJobInspection(j.id);
+                    }}
+                    className="text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer"
                   >
                     {t.quickActions?.openJob || (isTh ? 'เปิดงาน' : 'Open Job')}
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      if (onConfirmAppointment) {
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onOpenCompactAppointment) {
+                        onOpenCompactAppointment(j);
+                      } else if (onConfirmAppointment) {
                         onConfirmAppointment(j.id);
                       } else if (onUpdateJobStatus) {
                         onUpdateJobStatus(j.id, 'Scheduled');
@@ -446,7 +472,8 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
               return (
                 <div
                   key={`att-quote-${j.id}`}
-                  className="p-3 rounded-xl border border-sky-200 bg-sky-50/40 flex flex-col justify-between"
+                  onClick={() => onOpenJobQuotation(j.id)}
+                  className="p-3 rounded-xl border border-sky-200 bg-sky-50/40 flex flex-col justify-between cursor-pointer hover:shadow-md transition-all active:scale-[0.99]"
                 >
                   <div>
                     <div className="flex items-center justify-between gap-1 mb-1">
@@ -470,8 +497,11 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
                   <div className="mt-2.5 pt-2 border-t border-sky-200/60 flex items-center justify-between gap-2">
                     <button
                       type="button"
-                      onClick={() => onOpenJobQuotation(j.id)}
-                      className="text-xs font-bold text-slate-600 hover:text-slate-900"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenJobQuotation(j.id);
+                      }}
+                      className="text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer"
                     >
                       {t.quickActions?.viewQuote || (isTh ? 'ดูใบเสนอราคา' : 'View Quote')}
                     </button>
@@ -480,6 +510,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
                         href={waUrl}
                         target="_blank"
                         rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
                         className="min-h-[36px] text-xs font-black px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded-lg flex items-center gap-1 shadow-xs"
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
@@ -488,8 +519,11 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
                     ) : (
                       <button
                         type="button"
-                        onClick={() => onOpenJobInspection(j.id)}
-                        className="min-h-[36px] text-xs font-black px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded-lg"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenJobInspection(j.id);
+                        }}
+                        className="min-h-[36px] text-xs font-black px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded-lg cursor-pointer"
                       >
                         {t.quickActions?.openJob || (isTh ? 'เปิดงาน' : 'Open Job')}
                       </button>
@@ -505,7 +539,8 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
               return (
                 <div
                   key={`att-vendor-${j.id}`}
-                  className="p-3 rounded-xl border border-purple-200 bg-purple-50/40 flex flex-col justify-between"
+                  onClick={() => onOpenJobInspection(j.id)}
+                  className="p-3 rounded-xl border border-purple-200 bg-purple-50/40 flex flex-col justify-between cursor-pointer hover:shadow-md transition-all active:scale-[0.99]"
                 >
                   <div>
                     <div className="flex items-center justify-between gap-1 mb-1">
@@ -529,15 +564,21 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
                   <div className="mt-2.5 pt-2 border-t border-purple-200/60 flex items-center justify-between gap-2">
                     <button
                       type="button"
-                      onClick={() => onOpenJobInspection(j.id)}
-                      className="text-xs font-bold text-slate-600 hover:text-slate-900"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenJobInspection(j.id);
+                      }}
+                      className="text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer"
                     >
                       {t.quickActions?.openJob || (isTh ? 'เปิดงาน' : 'Open Job')}
                     </button>
                     <button
                       type="button"
-                      onClick={() => onOpenAssignVendorModal && onOpenAssignVendorModal(j)}
-                      className="min-h-[36px] text-xs font-black px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg flex items-center gap-1 shadow-xs"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onOpenAssignVendorModal) onOpenAssignVendorModal(j);
+                      }}
+                      className="min-h-[36px] text-xs font-black px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg flex items-center gap-1 shadow-xs cursor-pointer"
                     >
                       <Truck className="w-3.5 h-3.5" />
                       <span>
@@ -555,7 +596,8 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
             {uninvoicedCompletedJobs.map((j) => (
               <div
                 key={`att-uninv-${j.id}`}
-                className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/40 flex flex-col justify-between"
+                onClick={() => onOpenJobInspection(j.id)}
+                className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/40 flex flex-col justify-between cursor-pointer hover:shadow-md transition-all active:scale-[0.99]"
               >
                 <div>
                   <div className="flex items-center justify-between gap-1 mb-1">
@@ -579,15 +621,21 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
                 <div className="mt-2.5 pt-2 border-t border-emerald-200/60 flex items-center justify-between gap-2">
                   <button
                     type="button"
-                    onClick={() => onOpenJobInspection(j.id)}
-                    className="text-xs font-bold text-slate-600 hover:text-slate-900"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenJobInspection(j.id);
+                    }}
+                    className="text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer"
                   >
                     {t.quickActions?.openJob || (isTh ? 'เปิดงาน' : 'Open Job')}
                   </button>
                   <button
                     type="button"
-                    onClick={() => onOpenJobQuotation(j.id)}
-                    className="min-h-[36px] text-xs font-black px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg flex items-center gap-1 shadow-xs"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenJobQuotation(j.id);
+                    }}
+                    className="min-h-[36px] text-xs font-black px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg flex items-center gap-1 shadow-xs cursor-pointer"
                   >
                     <Receipt className="w-3.5 h-3.5" />
                     <span>{t.quickActions?.createInvoice || (isTh ? 'ออกใบแจ้งหนี้' : 'Create Invoice')}</span>
@@ -674,8 +722,11 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
                 onOpenScheduleModal={onOpenScheduleModal}
                 onOpenAssignVendorModal={onOpenAssignVendorModal}
                 onConfirmAppointment={onConfirmAppointment}
+                onOpenCompactAppointment={onOpenCompactAppointment}
                 onOpenEditJob={onOpenEditJob}
                 onUpdateJobStatus={onUpdateJobStatus}
+                onCustomerApprove={onCustomerApprove}
+                onFinishFieldWork={onFinishFieldWork}
                 onSelectProperty={onSelectProperty}
                 onSelectCustomer={onSelectCustomer}
               />
@@ -781,8 +832,11 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
                 onOpenScheduleModal={onOpenScheduleModal}
                 onOpenAssignVendorModal={onOpenAssignVendorModal}
                 onConfirmAppointment={onConfirmAppointment}
+                onOpenCompactAppointment={onOpenCompactAppointment}
                 onOpenEditJob={onOpenEditJob}
                 onUpdateJobStatus={onUpdateJobStatus}
+                onCustomerApprove={onCustomerApprove}
+                onFinishFieldWork={onFinishFieldWork}
                 onSelectProperty={onSelectProperty}
                 onSelectCustomer={onSelectCustomer}
               />
@@ -828,8 +882,11 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
                 onOpenScheduleModal={onOpenScheduleModal}
                 onOpenAssignVendorModal={onOpenAssignVendorModal}
                 onConfirmAppointment={onConfirmAppointment}
+                onOpenCompactAppointment={onOpenCompactAppointment}
                 onOpenEditJob={onOpenEditJob}
                 onUpdateJobStatus={onUpdateJobStatus}
+                onCustomerApprove={onCustomerApprove}
+                onFinishFieldWork={onFinishFieldWork}
                 onSelectProperty={onSelectProperty}
                 onSelectCustomer={onSelectCustomer}
               />

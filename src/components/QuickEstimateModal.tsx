@@ -221,6 +221,21 @@ export const QuickEstimateModal: React.FC<QuickEstimateModalProps> = ({
 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [itemType, setItemType] = useState<'hardware' | 'service'>('hardware');
+  const [quoteTitle, setQuoteTitle] = useState(
+    job.quotation?.title || 'Electrical Inspection & Fault-Finding Service'
+  );
+  const [paymentTerm, setPaymentTerm] = useState(
+    job.quotation?.paymentTerm || 'Pay After Inspection / ชำระหลังเสร็จสิ้นการตรวจ'
+  );
+  const [depositPercent, setDepositPercent] = useState<number>(
+    job.quotation?.depositPercent ??
+      (paymentTerm.toLowerCase().includes('after inspection') ||
+      (paymentTerm.toLowerCase().includes('completion') && !paymentTerm.includes('50%'))
+        ? 0
+        : paymentTerm.toLowerCase().includes('100%') || paymentTerm.toLowerCase().includes('advance')
+        ? 100
+        : 50)
+  );
   const [customTitleTh, setCustomTitleTh] = useState('');
   const [customTitleEn, setCustomTitleEn] = useState('');
   const [customQty, setCustomQty] = useState<number>(1);
@@ -297,6 +312,49 @@ export const QuickEstimateModal: React.FC<QuickEstimateModalProps> = ({
   const showNotice = (msg: string) => {
     setAddedNotice(msg);
     setTimeout(() => setAddedNotice(null), 3500);
+  };
+
+  const handleUpdatePaymentTerms = (newTerm: string, newDepositPct: number) => {
+    setPaymentTerm(newTerm);
+    setDepositPercent(newDepositPct);
+    const updatedJob = { ...job };
+    updatedJob.quotation = {
+      ...job.quotation,
+      paymentTerm: newTerm,
+      depositPercent: newDepositPct,
+    };
+    onSaveQuotation(updatedJob);
+    showNotice(`✓ ปรับเงื่อนไขชำระเงินเป็น: ${newTerm}`);
+  };
+
+  const handleApplyInitialInspectionPreset = () => {
+    const updatedService: QuotationServiceItem = {
+      item: 1,
+      description: 'Electrical Inspection & Fault-Finding Service (ตรวจเช็กและวิเคราะห์สาเหตุระบบไฟฟ้า)',
+      detail: 'งานช่างเทคนิคลงพื้นที่ตรวจสอบตู้เมนเบรกเกอร์ วิเคราะห์สาเหตุไฟทริป ทดสอบวงจรไฟฟ้า และให้คำปรึกษาแนวทางแก้ไข',
+      estimatedSchedule: 'Immediate / ภายใน 24-48 ชม.',
+      qty: '1 Job',
+      amount: 2500,
+    };
+    const newTitle = 'Electrical Inspection & Fault-Finding Service';
+    const newPayment = 'Pay After Inspection / ชำระหลังเสร็จสิ้นการตรวจ';
+    setQuoteTitle(newTitle);
+    setPaymentTerm(newPayment);
+    setDepositPercent(0);
+
+    const updatedJob = { ...job };
+    updatedJob.quotation = {
+      ...job.quotation,
+      title: newTitle,
+      quotePurpose: 'INSPECTION_DIAGNOSIS',
+      paymentTerm: newPayment,
+      depositPercent: 0,
+      validity: '7 Days / 7 วัน',
+      serviceItems: [updatedService],
+      hardwareItems: [], // Initial diagnosis does not assume replacement parts
+    };
+    onSaveQuotation(updatedJob);
+    showNotice('✓ ตั้งค่าเป็นใบเสนอราคาตรวจเช็กเบื้องต้น (฿2,500) ชำระหลังตรวจ เรียบร้อยแล้ว');
   };
 
   // Add preset item to current quotation
@@ -651,7 +709,7 @@ ${svText ? `⚙️ *Technical Labor & Services:*\n${svText}\n` : ''}
 📁 *High-Res Photo Log:* ${job.driveFolderUrl || 'Available on request'}
 
 Please reply "APPROVED" to confirm procurement and schedule completion.
-_Mr. Big & PTL Engineering Support_`;
+_Phuket Trusted Local Engineering Support_`;
   };
 
   const handleCopyWhatsApp = () => {
@@ -703,6 +761,79 @@ _Mr. Big & PTL Engineering Support_`;
             <span>{addedNotice}</span>
           </div>
         )}
+
+        {/* Quotation Workflow Mode & Payment Terms Controls */}
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-3.5 space-y-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
+                โหมดใบเสนอราคาและเงื่อนไขการชำระเงิน (PTL Commercial Terms)
+              </span>
+              <div className="text-xs font-bold text-slate-800">
+                {job.quotation?.quotePurpose === 'INSPECTION_DIAGNOSIS' || depositPercent === 0
+                  ? '⚡ ตรวจเช็กและวิเคราะห์สาเหตุ (Inspection / Fault-Finding)'
+                  : '🔧 งานซ่อมแซมและจัดซื้ออะไหล่ (Repair / Installation Work)'}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleApplyInitialInspectionPreset}
+              className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold rounded-lg shadow-2xs transition-all flex items-center justify-center gap-1 cursor-pointer self-start sm:self-auto active:scale-95"
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span>⚡ ใช้สูตรค่าตรวจเริ่มต้น (฿2,500 ชำระหลังตรวจ)</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-slate-200/80">
+            <span className="text-[11px] font-semibold text-slate-600">เงื่อนไขชำระ:</span>
+            <button
+              type="button"
+              onClick={() => handleUpdatePaymentTerms('Pay After Inspection / ชำระหลังเสร็จสิ้นการตรวจ', 0)}
+              className={`text-[11px] px-2.5 py-1 rounded-md font-bold transition-colors cursor-pointer ${
+                depositPercent === 0 && paymentTerm.toLowerCase().includes('after inspection')
+                  ? 'bg-blue-600 text-white shadow-2xs'
+                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              Pay After Inspection (0% มัดจำ)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleUpdatePaymentTerms('50% Deposit, 50% Upon Completion', 50)}
+              className={`text-[11px] px-2.5 py-1 rounded-md font-bold transition-colors cursor-pointer ${
+                depositPercent === 50
+                  ? 'bg-blue-600 text-white shadow-2xs'
+                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              50% มัดจำ / 50% ส่งมอบ
+            </button>
+            <button
+              type="button"
+              onClick={() => handleUpdatePaymentTerms('100% Advance Payment / ชำระเต็มจำนวนล่วงหน้า', 100)}
+              className={`text-[11px] px-2.5 py-1 rounded-md font-bold transition-colors cursor-pointer ${
+                depositPercent === 100
+                  ? 'bg-blue-600 text-white shadow-2xs'
+                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              100% ชำระล่วงหน้า
+            </button>
+            <button
+              type="button"
+              onClick={() => handleUpdatePaymentTerms('100% Upon Completion / ชำระเต็มจำนวนเมื่อส่งมอบ', 0)}
+              className={`text-[11px] px-2.5 py-1 rounded-md font-bold transition-colors cursor-pointer ${
+                depositPercent === 0 && !paymentTerm.toLowerCase().includes('after inspection')
+                  ? 'bg-blue-600 text-white shadow-2xs'
+                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              100% ชำระเมื่อส่งมอบ
+            </button>
+          </div>
+        </div>
 
         {/* Live Quotation Summary Bar */}
         <div className="bg-slate-900 text-white rounded-xl p-3 sm:p-3.5 mb-3.5 flex flex-wrap items-center justify-between gap-2 shadow-xs">
