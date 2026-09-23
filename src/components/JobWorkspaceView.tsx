@@ -37,6 +37,8 @@ import { formatDateDisplay, formatTime24h } from '../utils/dateTime';
 import { BUILD_VERSION } from '../utils/buildVersion';
 import {
   getLocalizedServiceName,
+  getDominantJobState,
+  getPrimaryJobAction,
   isHomeWatchService,
   isRoadsideService,
   isElectricalService,
@@ -119,6 +121,7 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
 }) => {
   const { lang, setLanguage, t } = useLanguage();
   const isTh = lang === 'th';
+  const isDirectWork = Boolean(job.jobPurpose && !['INSPECTION_DIAGNOSIS', 'FAULT_FINDING', 'HOME_WATCH_VISIT'].includes(job.jobPurpose));
 
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isApptModalOpen, setIsApptModalOpen] = useState(false);
@@ -155,6 +158,33 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
 
   // Determine current dominant state and explanation
   const getDominantStateDetails = () => {
+    if (isDirectWork && job.status !== 'Completed' && !job.actualCompletedAt && !job.fieldWorkCompletedAt) {
+      const state = getDominantJobState(job, lang);
+      const action = getPrimaryJobAction(job, lang);
+      return {
+        stage: state.key === 'in_progress' ? 'direct_work_active' : 'direct_work_pending',
+        badge: state.label,
+        badgeBg: state.badgeClass,
+        explanation: job.requestDescription || job.serviceType,
+        nextStep: action.label,
+        actionLabel: action.label,
+        actionColor: action.buttonClass,
+        onAction: () => {
+          switch (action.type) {
+            case 'create_quote':
+            case 'create_inspection_quote':
+            case 'quick_quote': onOpenQuotation(job.id, 'edit'); break;
+            case 'send_quote': onOpenQuotation(job.id, 'send'); break;
+            case 'customer_approved': onUpdateJob((prev) => ({ ...prev, status: 'Approved', customerApprovedAt: new Date().toISOString() })); break;
+            case 'schedule_job': if (onOpenScheduleModal) onOpenScheduleModal(job); else setIsApptModalOpen(true); break;
+            case 'confirm_appointment': setIsApptModalOpen(true); break;
+            case 'start_job': onUpdateJob((prev) => ({ ...prev, status: 'In Progress', actualStartedAt: new Date().toISOString() })); break;
+            case 'finish_field_work': onUpdateJob((prev) => ({ ...prev, status: 'Completed', actualCompletedAt: new Date().toISOString() })); break;
+            default: document.getElementById('service-workspace')?.scrollIntoView({ behavior: 'smooth' });
+          }
+        },
+      };
+    }
     // 1. After Field Work / Completed
     if (job.status === 'Completed' || Boolean(job.completedAt) || Boolean(job.actualCompletedAt) || Boolean(job.fieldWorkFinishedAt)) {
       const hasInvoice = invoices.some((i) => i.jobId === job.id);
@@ -674,7 +704,7 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
             </div>
 
             {/* Row C: Progress Stepper */}
-            <div className="pt-2">
+            {!isDirectWork && <div className="pt-2">
               <div className="grid grid-cols-4 gap-1 sm:gap-2">
                 {steps.map((s, idx) => (
                   <div key={idx} className="flex flex-col items-center text-center">
@@ -703,7 +733,7 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
                   </div>
                 ))}
               </div>
-            </div>
+            </div>}
           </div>
         </div>
       )}
@@ -712,7 +742,13 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
       {/* 3. CORE WORKFLOW ENGINE RENDERER (Clean, Progressive Disclosure) */}
       {/* ========================================================================= */}
       <main className="max-w-4xl mx-auto w-full px-3 sm:px-6 py-4 flex-1 min-w-0">
-        {stateDetails.stage === 'before_inspection' ? (
+        {stateDetails.stage === 'direct_work_pending' ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-700">
+            <p className="font-bold text-slate-900">{isTh ? 'รายละเอียดงาน' : 'Job details'}</p>
+            <p className="mt-2">{job.requestDescription || job.serviceType}</p>
+            <p className="mt-2 text-slate-500">{isTh ? 'เครื่องมือหน้างานจะแสดงเมื่อเริ่มทำงาน' : 'Field tools appear when work starts.'}</p>
+          </div>
+        ) : stateDetails.stage === 'before_inspection' ? (
           <BeforeInspectionWorkspaceView
             job={job}
             customer={customer}
