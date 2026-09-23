@@ -122,9 +122,8 @@ export const JobCard: React.FC<JobCardProps> = ({
   const villaTitle = job.villaName || property?.name || (isTh ? 'วิลล่า' : 'Property');
 
   // Formatted date and time (Strict 24h)
-  const effectiveDate = job.scheduledDate || job.inspectionDate;
-  const dateLabel = formatDateDisplay(effectiveDate, lang) || (isTh ? 'วันนี้' : 'Today');
-  const time24 = formatTime24h(job.scheduledTime) || '10:00';
+  const dateLabel = job.scheduledDate ? formatDateDisplay(job.scheduledDate, lang) : (isTh ? 'ยังไม่ได้นัด' : 'Not scheduled');
+  const time24 = job.scheduledTime ? formatTime24h(job.scheduledTime) : '';
 
   // Handle primary action execution
   const handleExecutePrimaryAction = () => {
@@ -491,11 +490,7 @@ export const JobCard: React.FC<JobCardProps> = ({
             <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <span>{dateLabel}</span>
           </span>
-          <span className="text-slate-300">•</span>
-          <span className="flex items-center gap-1 text-blue-700">
-            <Clock className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-            <span>{time24}</span>
-          </span>
+          {time24 && <><span className="text-slate-300">•</span><span className="flex items-center gap-1 text-blue-700"><Clock className="w-3.5 h-3.5 text-blue-500 shrink-0" /><span>{time24}</span></span></>}
         </div>
 
         {/* Dedicated Appointment Status badge - strictly separated from commercial approval! */}
@@ -531,24 +526,8 @@ export const JobCard: React.FC<JobCardProps> = ({
           </span>
         </div>
 
-        {/* ONE Primary Next Action Button + Optional ONE Small Secondary Action */}
+        {/* Keep the field view focused on a single next action. Other actions are in More. */}
         <div className="flex items-center gap-1.5 shrink-0">
-          {primaryAction.secondaryAction && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleExecuteSecondaryAction();
-              }}
-              className={`min-h-[40px] px-2.5 sm:px-3 py-1.5 rounded-xl text-xs transition-all cursor-pointer select-none active:scale-98 flex items-center justify-center font-bold ${
-                primaryAction.secondaryAction.buttonClass ||
-                'text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200'
-              }`}
-            >
-              <span>{primaryAction.secondaryAction.label}</span>
-            </button>
-          )}
-
           <button
             type="button"
             onClick={(e) => {
