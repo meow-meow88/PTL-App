@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   CalendarDays,
   Clock,
@@ -32,7 +32,7 @@ import {
 import { useLanguage } from '../i18n/translations';
 import { JobCard } from './JobCard';
 import { formatDateDisplay, formatTime24h } from '../utils/dateTime';
-import { getLocalizedServiceName } from '../utils/serviceWorkflow';
+import { getLocalizedServiceName, getDominantJobState } from '../utils/serviceWorkflow';
 
 interface MyDayViewProps {
   jobs: InspectionJob[];
@@ -90,14 +90,14 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
   const isTh = lang === 'th';
 
   // 4 simple filter pills for Today's Jobs (Requirement 2)
-  const [todayFilter, setTodayFilter] = useState<'all' | 'not_started' | 'in_progress' | 'completed'>('all');
 
   // Dates normalization
   const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
+  const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const todayStr = localDate(now);
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+  const tomorrowStr = localDate(tomorrow);
 
   // Formatted Header Date
   const headerDateString = now.toLocaleDateString(isTh ? 'th-TH' : 'en-US', {
@@ -140,13 +140,12 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
   // =========================================================================
   // 1. ACTIVE JOBS (In Progress)
   // =========================================================================
-  const activeJobs = jobs.filter(
-    (j) =>
-      j.status === 'In Progress' ||
-      Boolean(j.visitStartedAt) ||
-      Boolean(j.siteArrivedAt) ||
-      Boolean(j.actualStartedAt)
-  );
+  const activeJobs = jobs.filter((j) => getDominantJobState(j).key === 'in_progress');
+  const pendingKeys = new Set(['new', 'waiting_scope', 'scope_confirmed', 'quote_drafted',
+    'waiting_approval', 'waiting_vendor', 'approved_to_schedule', 'scheduled_unconfirmed']);
+  const pendingJobs = jobs.filter((j) => pendingKeys.has(getDominantJobState(j).key))
+    .sort((a, b) => (b.urgency === 'Urgent' ? 1 : 0) - (a.urgency === 'Urgent' ? 1 : 0) ||
+      (a.createdAt || '').localeCompare(b.createdAt || ''));
 
   // =========================================================================
   // 2. TODAY'S JOBS
@@ -158,20 +157,10 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
 
   const todayAllJobs = jobs.filter(isJobToday);
 
-  // Filtered Today's Jobs
-  const filteredTodayJobs = todayAllJobs.filter((j) => {
-    if (todayFilter === 'all') return true;
-    if (todayFilter === 'not_started') {
-      return j.status === 'Scheduled' && !j.visitStartedAt && !j.actualStartedAt;
-    }
-    if (todayFilter === 'in_progress') {
-      return j.status === 'In Progress' || Boolean(j.visitStartedAt) || Boolean(j.actualStartedAt);
-    }
-    if (todayFilter === 'completed') {
-      return j.status === 'Completed';
-    }
-    return true;
-  });
+  const filteredTodayJobs = todayAllJobs.filter((j) =>
+    !pendingJobs.includes(j) && !activeJobs.includes(j) &&
+    !['Completed', 'Cancelled'].includes(j.status) &&
+    !['waiting_payment', 'ready_to_close'].includes(getDominantJobState(j).key));
 
   // =========================================================================
   // 3. UPCOMING JOBS (Tomorrow & Next 7 Days)
@@ -179,7 +168,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
   const upcomingJobs = jobs
     .filter((j) => {
       const date = j.scheduledDate || j.inspectionDate;
-      if (!date || isJobToday(j)) return false;
+      if (!date || isJobToday(j) || pendingJobs.includes(j) || activeJobs.includes(j)) return false;
       return date >= tomorrowStr && j.status !== 'Completed' && j.status !== 'Cancelled';
     })
     .sort((a, b) => {
@@ -188,70 +177,6 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
       return dateA.localeCompare(dateB);
     })
     .slice(0, 6);
-
-  // =========================================================================
-  // 4. NEEDS ATTENTION ITEMS (Single Consolidated Section)
-  // =========================================================================
-  // Overdue Invoices
-  const overdueInvoices = invoices.filter((inv) => {
-    if (inv.status === 'Paid' || inv.status === 'Cancelled') return false;
-    if (!inv.dueDate) return false;
-    return inv.dueDate < todayStr;
-  });
-
-  // Unconfirmed Visits / Appointments
-  const unconfirmedJobs = jobs.filter((j) => {
-    const hasDate = Boolean(j.scheduledDate || j.scheduledTime);
-    if (!hasDate) return false;
-    return (
-      (j.appointmentConfirmation === 'Pending' ||
-        j.appointmentConfirmation === 'Unconfirmed' ||
-        j.appointmentConfirmation === 'Not Confirmed' ||
-        j.isAppointmentConfirmed === false) &&
-      j.status !== 'Completed' &&
-      j.status !== 'Cancelled'
-    );
-  });
-
-  // Quotes Waiting on Customer Approval
-  const pendingQuoteJobs = jobs.filter(
-    (j) => (j.status === 'Quoted' || j.status === 'Waiting Approval' || j.waitingOn === 'customer') && j.status !== 'Cancelled'
-  );
-
-  // Jobs Waiting on Vendor
-  const pendingVendorJobs = jobs.filter(
-    (j) => (j.status === 'Waiting Vendor' || j.waitingOn === 'vendor' || j.waitingOn === 'parts') && j.status !== 'Cancelled'
-  );
-
-  // Completed Jobs Not Invoiced
-  const uninvoicedCompletedJobs = jobs.filter((j) => {
-    if (j.status !== 'Completed') return false;
-    const hasPaidInvoice = invoices.some((inv) => inv.jobId === j.id && inv.status === 'Paid');
-    return !hasPaidInvoice && (j.paymentStatus === 'Pending' || !j.paymentStatus || j.waitingOn === 'payment');
-  });
-
-  // Recurring Services Due
-  const dueRecurringServices = recurringServices.filter((s) => {
-    if (!s.isActive || !s.nextDueDate) return false;
-    return s.nextDueDate <= tomorrowStr;
-  });
-
-  const totalAttentionCount =
-    overdueInvoices.length +
-    unconfirmedJobs.length +
-    pendingQuoteJobs.length +
-    pendingVendorJobs.length +
-    uninvoicedCompletedJobs.length +
-    dueRecurringServices.length;
-
-  // =========================================================================
-  // 5. MONEY TO COLLECT
-  // =========================================================================
-  const unpaidInvoices = invoices.filter((inv) => inv.status !== 'Paid' && inv.status !== 'Cancelled');
-  const totalOutstandingBalance = unpaidInvoices.reduce(
-    (sum, inv) => sum + (inv.balanceDue ?? inv.total ?? 0),
-    0
-  );
 
   return (
     <div className="max-w-4xl mx-auto space-y-5 px-3 sm:px-6 py-4 pb-16 w-full min-w-0 overflow-x-hidden">
@@ -301,393 +226,19 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* 1. NEEDS ATTENTION SECTION (Consolidated, No Duplicates) */}
-      {/* ========================================================================= */}
-      <section className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-xs w-full min-w-0">
-        <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-100 mb-3">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-amber-100 text-amber-900">
-              <AlertCircle className="w-4 h-4" />
-            </div>
-            <h2 className="text-sm sm:text-base font-extrabold text-slate-900 tracking-wide uppercase">
-              {t.myDay.needsAttention}
-            </h2>
-          </div>
-          {totalAttentionCount > 0 ? (
-            <span className="text-xs font-black px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 shadow-xs">
-              {totalAttentionCount} {isTh ? 'รายการ' : 'items'}
-            </span>
-          ) : (
-            <span className="text-xs font-bold text-emerald-700 flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>{isTh ? 'เรียบร้อย' : 'Clear'}</span>
-            </span>
-          )}
-        </div>
-
-        {/* Content: Empty State or Compact Action Cards */}
-        {totalAttentionCount === 0 ? (
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 text-center text-xs sm:text-sm font-semibold text-slate-600 flex items-center justify-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{t.myDay.allClear}</span>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            {/* 1. Overdue Invoices */}
-            {overdueInvoices.map((inv) => {
-              const cust = customerMap.get(inv.customerId);
-              const custName = cust?.name || (inv as any).customerName || 'Customer';
-              const amountDue = inv.balanceDue ?? inv.total ?? 0;
-              const waUrl = makeWhatsappUrl(
-                cust?.phone,
-                isTh
-                  ? `สวัสดีครับ จาก Phuket Trusted Local แจ้งยอดค้างชำระใบแจ้งหนี้ ${inv.invoiceNumber} จำนวน ${amountDue.toLocaleString()} บาท`
-                  : `Hello, this is Phuket Trusted Local following up on overdue invoice ${inv.invoiceNumber} for ฿${amountDue.toLocaleString()}.`
-              );
-              return (
-                <div
-                  key={`att-inv-${inv.id}`}
-                  onClick={() => onSelectInvoice && onSelectInvoice(inv.id)}
-                  className="p-3 rounded-xl border border-rose-200 bg-rose-50/40 flex flex-col justify-between cursor-pointer hover:shadow-md transition-all active:scale-[0.99]"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-1 mb-1">
-                      <span className="text-[10px] font-black uppercase text-rose-800 bg-rose-200/70 px-1.5 py-0.2 rounded">
-                        {t.attentionReasons?.overdueInvoice || (isTh ? 'ใบแจ้งหนี้เกินกำหนด' : 'Overdue Invoice')}
-                      </span>
-                      <span className="font-mono text-xs font-black text-rose-700">
-                        ฿{amountDue.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="text-xs font-extrabold text-slate-900 truncate">
-                      {custName}
-                    </div>
-                    <div className="text-[11px] text-slate-500">
-                      {isTh ? 'เกินกำหนดเมื่อ' : 'Due'}: {inv.dueDate}
-                    </div>
-                  </div>
-
-                  <div className="mt-2.5 pt-2 border-t border-rose-200/60 flex items-center justify-between gap-2">
-                    {waUrl && (
-                      <a
-                        href={waUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs font-bold px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg flex items-center gap-1"
-                      >
-                        <MessageSquare className="w-3 h-3" />
-                        <span>WhatsApp</span>
-                      </a>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => onSelectInvoice && onSelectInvoice(inv.id)}
-                      className="min-h-[36px] text-xs font-black px-3 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg cursor-pointer ml-auto"
-                    >
-                      {t.quickActions?.recordPayment || (isTh ? 'บันทึกรับเงิน' : 'Record Payment')}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* 2. Unconfirmed Appointments */}
-            {unconfirmedJobs.map((j) => (
-              <div
-                key={`att-unconf-${j.id}`}
-                onClick={() => onOpenJobInspection(j.id)}
-                className="p-3 rounded-xl border border-amber-200 bg-amber-50/40 flex flex-col justify-between cursor-pointer hover:shadow-md transition-all active:scale-[0.99]"
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-1 mb-1">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (onOpenCompactAppointment) {
-                          onOpenCompactAppointment(j);
-                        } else if (onConfirmAppointment) {
-                          onConfirmAppointment(j.id);
-                        }
-                      }}
-                      className="text-[10px] font-black uppercase text-amber-900 bg-amber-200/80 hover:bg-amber-300 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
-                      title={isTh ? 'คลิกเพื่อจัดการนัดหมาย' : 'Click to manage appointment'}
-                    >
-                      {t.dominantStates?.appointmentNotConfirmed || (isTh ? 'ยังไม่ยืนยันนัด' : 'Appointment Not Confirmed')}
-                    </button>
-                    <span className="font-mono text-xs font-bold text-slate-700">
-                      {formatTime24h(j.scheduledTime) || '10:00'}
-                    </span>
-                  </div>
-                  <div className="text-xs font-extrabold text-slate-900 truncate">
-                    {j.customerName}
-                  </div>
-                  <div className="text-[11px] text-slate-600 truncate">
-                    {getLocalizedServiceName(j.serviceType, lang)} • {j.villaName || j.propertyLocation}
-                  </div>
-                </div>
-
-                <div className="mt-2.5 pt-2 border-t border-amber-200/60 flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenJobInspection(j.id);
-                    }}
-                    className="text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer"
-                  >
-                    {t.quickActions?.openJob || (isTh ? 'เปิดงาน' : 'Open Job')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (onOpenCompactAppointment) {
-                        onOpenCompactAppointment(j);
-                      } else if (onConfirmAppointment) {
-                        onConfirmAppointment(j.id);
-                      } else if (onUpdateJobStatus) {
-                        onUpdateJobStatus(j.id, 'Scheduled');
-                      }
-                    }}
-                    className="min-h-[36px] text-xs font-black px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg cursor-pointer flex items-center gap-1 shadow-xs"
-                  >
-                    <Check className="w-3.5 h-3.5 stroke-[3]" />
-                    <span>{t.quickActions?.confirmAppointment || (isTh ? 'ยืนยันนัด' : 'Confirm Appointment')}</span>
-                  </button>
-                </div>
-              </div>
-            ))}
-
-            {/* 3. Quotes Waiting Customer Approval */}
-            {pendingQuoteJobs.map((j) => {
-              const cust = customerMap.get(j.customerId);
-              const waUrl = makeWhatsappUrl(
-                cust?.phone || j.customerPhone,
-                isTh
-                  ? `สวัสดีครับ จาก Phuket Trusted Local สอบถามเรื่องใบเสนอราคางาน ${j.serviceType} ที่ส่งให้ครับ`
-                  : `Hello! Phuket Trusted Local following up on the quotation sent for ${j.serviceType}.`
-              );
-              return (
-                <div
-                  key={`att-quote-${j.id}`}
-                  onClick={() => onOpenJobQuotation(j.id)}
-                  className="p-3 rounded-xl border border-sky-200 bg-sky-50/40 flex flex-col justify-between cursor-pointer hover:shadow-md transition-all active:scale-[0.99]"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-1 mb-1">
-                      <span className="text-[10px] font-black uppercase text-sky-900 bg-sky-200/80 px-1.5 py-0.2 rounded">
-                        {t.dominantStates?.waitingCustomerApproval || (isTh ? 'รอลูกค้าอนุมัติ' : 'Waiting Customer Approval')}
-                      </span>
-                      {typeof j.price === 'number' && (
-                        <span className="font-mono text-xs font-bold text-slate-700">
-                          ฿{(j.price || 0).toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs font-extrabold text-slate-900 truncate">
-                      {j.customerName}
-                    </div>
-                    <div className="text-[11px] text-slate-600 truncate">
-                      {getLocalizedServiceName(j.serviceType, lang)}
-                    </div>
-                  </div>
-
-                  <div className="mt-2.5 pt-2 border-t border-sky-200/60 flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenJobQuotation(j.id);
-                      }}
-                      className="text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer"
-                    >
-                      {t.quickActions?.viewQuote || (isTh ? 'ดูใบเสนอราคา' : 'View Quote')}
-                    </button>
-                    {waUrl ? (
-                      <a
-                        href={waUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="min-h-[36px] text-xs font-black px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded-lg flex items-center gap-1 shadow-xs"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        <span>{t.quickActions?.contactCustomer || (isTh ? 'ติดต่อลูกค้า' : 'Contact Customer')}</span>
-                      </a>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenJobInspection(j.id);
-                        }}
-                        className="min-h-[36px] text-xs font-black px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded-lg cursor-pointer"
-                      >
-                        {t.quickActions?.openJob || (isTh ? 'เปิดงาน' : 'Open Job')}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* 4. Jobs Waiting on Vendor */}
-            {pendingVendorJobs.map((j) => {
-              const vendor = j.vendorId ? vendorMap.get(j.vendorId) : undefined;
-              return (
-                <div
-                  key={`att-vendor-${j.id}`}
-                  onClick={() => onOpenJobInspection(j.id)}
-                  className="p-3 rounded-xl border border-purple-200 bg-purple-50/40 flex flex-col justify-between cursor-pointer hover:shadow-md transition-all active:scale-[0.99]"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-1 mb-1">
-                      <span className="text-[10px] font-black uppercase text-purple-900 bg-purple-200/80 px-1.5 py-0.2 rounded">
-                        {t.dominantStates?.waitingVendor || (isTh ? 'รอช่าง/พาร์ทเนอร์' : 'Waiting Vendor')}
-                      </span>
-                      {vendor && (
-                        <span className="text-[10px] font-bold text-purple-800 truncate max-w-[100px]">
-                          {vendor.name}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs font-extrabold text-slate-900 truncate">
-                      {j.customerName}
-                    </div>
-                    <div className="text-[11px] text-slate-600 truncate">
-                      {getLocalizedServiceName(j.serviceType, lang)} • {j.villaName || j.propertyLocation}
-                    </div>
-                  </div>
-
-                  <div className="mt-2.5 pt-2 border-t border-purple-200/60 flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenJobInspection(j.id);
-                      }}
-                      className="text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer"
-                    >
-                      {t.quickActions?.openJob || (isTh ? 'เปิดงาน' : 'Open Job')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (onOpenAssignVendorModal) onOpenAssignVendorModal(j);
-                      }}
-                      className="min-h-[36px] text-xs font-black px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg flex items-center gap-1 shadow-xs cursor-pointer"
-                    >
-                      <Truck className="w-3.5 h-3.5" />
-                      <span>
-                        {vendor
-                          ? (t.quickActions?.contactVendor || (isTh ? 'ติดต่อช่าง' : 'Contact Vendor'))
-                          : (t.quickActions?.assignVendor || (isTh ? 'มอบหมายช่าง' : 'Assign Vendor'))}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* 5. Completed Jobs Not Invoiced */}
-            {uninvoicedCompletedJobs.map((j) => (
-              <div
-                key={`att-uninv-${j.id}`}
-                onClick={() => onOpenJobInspection(j.id)}
-                className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/40 flex flex-col justify-between cursor-pointer hover:shadow-md transition-all active:scale-[0.99]"
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-1 mb-1">
-                    <span className="text-[10px] font-black uppercase text-emerald-900 bg-emerald-200/80 px-1.5 py-0.2 rounded">
-                      {t.attentionReasons?.readyForInvoice || (isTh ? 'งานเสร็จ รออกใบแจ้งหนี้' : 'Ready to Invoice')}
-                    </span>
-                    {typeof j.price === 'number' && (
-                      <span className="font-mono text-xs font-bold text-slate-700">
-                        ฿{(j.price || 0).toLocaleString()}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs font-extrabold text-slate-900 truncate">
-                    {j.customerName}
-                  </div>
-                  <div className="text-[11px] text-slate-600 truncate">
-                    {getLocalizedServiceName(j.serviceType, lang)}
-                  </div>
-                </div>
-
-                <div className="mt-2.5 pt-2 border-t border-emerald-200/60 flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenJobInspection(j.id);
-                    }}
-                    className="text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer"
-                  >
-                    {t.quickActions?.openJob || (isTh ? 'เปิดงาน' : 'Open Job')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenJobQuotation(j.id);
-                    }}
-                    className="min-h-[36px] text-xs font-black px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg flex items-center gap-1 shadow-xs cursor-pointer"
-                  >
-                    <Receipt className="w-3.5 h-3.5" />
-                    <span>{t.quickActions?.createInvoice || (isTh ? 'ออกใบแจ้งหนี้' : 'Create Invoice')}</span>
-                  </button>
-                </div>
-              </div>
-            ))}
-
-            {/* 6. Recurring Services Due */}
-            {dueRecurringServices.map((s) => (
-              <div
-                key={`att-rec-${s.id}`}
-                className="p-3 rounded-xl border border-teal-200 bg-teal-50/40 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-1 mb-1">
-                    <span className="text-[10px] font-black uppercase text-teal-900 bg-teal-200/80 px-1.5 py-0.2 rounded">
-                      {(t.attentionReasons?.recurringDue || (isTh ? 'บริการประจำรอบถึงกำหนด' : 'Recurring Service Due'))} • {s.serviceFrequency}
-                    </span>
-                    <span className="text-[11px] font-bold text-teal-900">
-                      {formatDateDisplay(s.nextDueDate, lang)}
-                    </span>
-                  </div>
-                  <div className="text-xs font-extrabold text-slate-900 truncate">
-                    {s.title}
-                  </div>
-                  <div className="text-[11px] text-slate-600 truncate">
-                    {s.propertyName} • {s.customerName}
-                  </div>
-                </div>
-
-                <div className="mt-2.5 pt-2 border-t border-teal-200/60 flex items-center justify-between gap-2">
-                  {onOpenRecurringModal && (
-                    <button
-                      type="button"
-                      onClick={onOpenRecurringModal}
-                      className="text-xs font-bold text-slate-600 hover:text-slate-900"
-                    >
-                      {isTh ? 'สัญญาทั้งหมด' : 'Contracts'}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={onOpenQuickJob}
-                    className="min-h-[36px] text-xs font-black px-3 py-1 bg-teal-600 hover:bg-teal-500 text-white rounded-lg flex items-center gap-1 shadow-xs ml-auto"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>{isTh ? 'เปิดงานนัดตรวจ' : 'Schedule Visit'}</span>
-                  </button>
-                </div>
-              </div>
-            ))}
+      <section className="bg-white rounded-2xl p-4 sm:p-5 border border-amber-200 shadow-xs w-full min-w-0">
+        <h2 className="text-base font-extrabold text-slate-900 mb-3">{isTh ? 'งานที่ต้องทำต่อ' : 'Next actions'} ({pendingJobs.length})</h2>
+        {pendingJobs.length === 0 ? <p className="text-sm text-slate-500">{isTh ? 'ไม่มีงานค้างที่ต้องดำเนินการ' : 'No pending jobs'}</p> : (
+          <div className="space-y-3">
+            {pendingJobs.map((job) => <JobCard key={job.id} job={job}
+              customer={customerMap.get(job.customerId)} property={propertyMap.get(job.propertyId)}
+              vendor={job.vendorId ? vendorMap.get(job.vendorId) : undefined}
+              onOpenInspection={onOpenJobInspection} onOpenQuotation={onOpenJobQuotation}
+              onOpenScheduleModal={onOpenScheduleModal} onOpenAssignVendorModal={onOpenAssignVendorModal}
+              onConfirmAppointment={onConfirmAppointment} onOpenCompactAppointment={onOpenCompactAppointment}
+              onOpenEditJob={onOpenEditJob} onUpdateJobStatus={onUpdateJobStatus}
+              onCustomerApprove={onCustomerApprove} onFinishFieldWork={onFinishFieldWork}
+              onSelectProperty={onSelectProperty} onSelectCustomer={onSelectCustomer} />)}
           </div>
         )}
       </section>
@@ -749,56 +300,8 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
             </h2>
           </div>
           <span className="text-xs font-black px-2 py-0.5 rounded-full bg-slate-900 text-white">
-            {todayAllJobs.length} {isTh ? 'งานวันนี้' : 'Jobs'}
+            {filteredTodayJobs.length} {isTh ? 'งานวันนี้' : 'Jobs'}
           </span>
-        </div>
-
-        {/* 4 Simple Filter Pills (Requirement 2) */}
-        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-2 mb-3">
-          <button
-            type="button"
-            onClick={() => setTodayFilter('all')}
-            className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-              todayFilter === 'all'
-                ? 'bg-slate-900 text-white shadow-xs'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-            }`}
-          >
-            {t.myDay.filterAll} ({todayAllJobs.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setTodayFilter('not_started')}
-            className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-              todayFilter === 'not_started'
-                ? 'bg-slate-900 text-white shadow-xs'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-            }`}
-          >
-            {t.myDay.filterNotStarted}
-          </button>
-          <button
-            type="button"
-            onClick={() => setTodayFilter('in_progress')}
-            className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-              todayFilter === 'in_progress'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-            }`}
-          >
-            {t.myDay.filterInProgress} ({activeJobs.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setTodayFilter('completed')}
-            className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-              todayFilter === 'completed'
-                ? 'bg-emerald-600 text-white shadow-xs'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-            }`}
-          >
-            {t.myDay.filterCompleted}
-          </button>
         </div>
 
         {/* Jobs List */}
@@ -895,85 +398,6 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
         )}
       </section>
 
-      {/* ========================================================================= */}
-      {/* 5. MONEY TO COLLECT SECTION */}
-      {/* ========================================================================= */}
-      <section className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-xs w-full min-w-0">
-        <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-100 mb-3">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-emerald-100 text-emerald-900">
-              <DollarSign className="w-4 h-4" />
-            </div>
-            <h2 className="text-sm sm:text-base font-extrabold text-slate-900 tracking-wide uppercase">
-              {t.myDay.moneyToCollect}
-            </h2>
-          </div>
-          <span className="font-mono text-xs sm:text-sm font-black text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200">
-            ฿{totalOutstandingBalance.toLocaleString()}
-          </span>
-        </div>
-
-        {unpaidInvoices.length === 0 ? (
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 text-center text-xs font-semibold text-slate-500">
-            {t.myDay.noMoneyToCollect}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {unpaidInvoices.slice(0, 5).map((inv) => {
-              const cust = customerMap.get(inv.customerId);
-              const custName = cust?.name || (inv as any).customerName || 'Customer';
-              const amountDue = inv.balanceDue ?? inv.total ?? 0;
-              const waUrl = makeWhatsappUrl(
-                cust?.phone,
-                isTh
-                  ? `สวัสดีครับ จาก Phuket Trusted Local แจ้งยอดชำระ ${inv.invoiceNumber} จำนวน ${amountDue.toLocaleString()} บาท`
-                  : `Hello! Phuket Trusted Local following up on invoice ${inv.invoiceNumber} for ฿${amountDue.toLocaleString()}.`
-              );
-              return (
-                <div
-                  key={`inv-${inv.id}`}
-                  className="p-3 rounded-xl border border-slate-200 hover:border-slate-300 bg-slate-50/50 flex items-center justify-between gap-2"
-                >
-                  <div className="min-w-0">
-                    <div className="text-xs font-extrabold text-slate-900 truncate">
-                      {custName}
-                    </div>
-                    <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
-                      <span>{inv.invoiceNumber}</span>
-                      <span>•</span>
-                      <span>{isTh ? 'ครบกำหนด' : 'Due'}: {inv.dueDate || '-'}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="font-mono text-xs sm:text-sm font-black text-slate-900">
-                      ฿{amountDue.toLocaleString()}
-                    </span>
-                    {waUrl && (
-                      <a
-                        href={waUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="p-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg"
-                        title="WhatsApp Customer"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                      </a>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => onSelectInvoice && onSelectInvoice(inv.id)}
-                      className="text-xs font-black px-2.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg cursor-pointer"
-                    >
-                      {t.quickActions?.recordPayment || (isTh ? 'บันทึกรับเงิน' : 'Record Payment')}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
     </div>
   );
 };
