@@ -43,7 +43,11 @@ export const MollyPaymentEvidenceModal: React.FC<Props> = ({invoices, jobs, paym
         reader.readAsDataURL(file);
       })));
       const response = await fetch('/api/gemini/molly-payment-evidence', {method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({files: attachments, message, invoices, jobs})});
+        body: JSON.stringify({files: attachments, message,
+          invoices: invoices.map((i) => ({id: i.id, invoiceNumber: i.invoiceNumber, jobId: i.jobId, customerId: i.customerId,
+            balanceDue: i.balanceDue, items: i.items.map((line) => ({description: line.description, amount: line.amount}))})),
+          jobs: jobs.map((j) => ({id: j.id, customerId: j.customerId || j.clientId, villaName: j.villaName,
+            serviceType: j.serviceType, materialDepositRequested: j.materialDepositRequested}))})});
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Molly could not read these documents.');
       const suggestions: Transfer[] = (result.transfers || []).map((t: Transfer) => ({...t,
