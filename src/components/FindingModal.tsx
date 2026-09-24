@@ -6,7 +6,6 @@ import {
   MicOff,
   Sparkles,
   Loader2,
-  ImagePlus,
   Check,
   Image as ImageIcon,
   ChevronDown,
@@ -42,14 +41,6 @@ const ZONE_QUICK_CHIPS = [
   'ห้องนอน 2 / Bedroom 2',
   'ตู้ไฟ MDB / Main Breaker',
   'สระว่ายน้ำ / Pool Area',
-];
-
-const PRESET_SAMPLE_PHOTOS = [
-  { label: 'Desk Pop-Up / Plug', url: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=500&auto=format&fit=crop&q=60' },
-  { label: 'Router / Wi-Fi', url: 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?w=500&auto=format&fit=crop&q=60' },
-  { label: 'Circuit Breaker / Switch', url: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=500&auto=format&fit=crop&q=60' },
-  { label: 'Lighting / Downlight', url: 'https://images.unsplash.com/photo-1513506003901-1e6a229e2d15?w=500&auto=format&fit=crop&q=60' },
-  { label: 'Pool Pump / Motor', url: 'https://images.unsplash.com/photo-1576013551627-0cc20b96c2a7?w=500&auto=format&fit=crop&q=60' },
 ];
 
 export const FindingModal: React.FC<FindingModalProps> = ({
@@ -540,7 +531,7 @@ export const FindingModal: React.FC<FindingModalProps> = ({
             {editingItem ? 'แก้ไขรายการที่ตรวจพบ' : 'บันทึกจุดที่ตรวจพบหน้างาน'}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            ถ่ายรูป พิมพ์หรือพูดอาการเสียเป็นภาษาไทย — มีระบบกันข้อมูลหาย 100% บันทึกทันที
+            ระบุจุดที่พบและสิ่งที่เห็นจริง แล้วแนบรูปถ้ามี
           </p>
         </div>
 
@@ -563,131 +554,6 @@ export const FindingModal: React.FC<FindingModalProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Photo Section */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              1. รูปภาพหน้างาน (Photo Evidence)
-            </label>
-
-            <div className="border-2 border-dashed border-slate-300 rounded-xl p-3 bg-slate-50 text-center hover:bg-slate-100/70 transition-colors">
-              {isCompressingPhoto ? (
-                <div className="py-6 flex flex-col items-center justify-center gap-2">
-                  <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-                  <p className="text-xs font-semibold text-slate-700">กำลังประมวลผลรูปภาพ...</p>
-                </div>
-              ) : imageUrl ? (
-                <div className="space-y-2">
-                  <div className="relative rounded-lg overflow-hidden max-h-48 border border-slate-200 bg-black/5">
-                    <img
-                      src={imageUrl}
-                      alt="Preview"
-                      className="w-full h-44 object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setImageUrl('')}
-                      className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white p-1.5 rounded-full text-xs shadow-md transition-all active:scale-95 cursor-pointer"
-                      title="ลบรูป"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                    <div className="absolute bottom-2 left-2 bg-black/70 text-white text-[10px] px-2 py-0.5 rounded font-mono">
-                      {fileReference || 'Captured Photo'}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                    <label
-                      htmlFor="mobile-camera-capture-input"
-                      className="cursor-pointer inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 px-3 py-1.5 rounded-lg transition-colors active:scale-95"
-                    >
-                      <Camera className="w-3.5 h-3.5 text-blue-600" />
-                      <span>ถ่ายใหม่ด้วยกล้อง</span>
-                    </label>
-
-                    <label
-                      htmlFor="mobile-gallery-photo-input"
-                      className="cursor-pointer inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 px-3 py-1.5 rounded-lg transition-colors active:scale-95"
-                    >
-                      <ImageIcon className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>เลือกจากอัลบั้ม</span>
-                    </label>
-
-                    <button
-                      type="button"
-                      onClick={() => setImageUrl('')}
-                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer"
-                    >
-                      <span>ลบรูป</span>
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="py-2.5">
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2 max-w-sm mx-auto mb-2.5">
-                    <label
-                      htmlFor="mobile-camera-capture-input"
-                      className="cursor-pointer flex-1 inline-flex items-center justify-center gap-2 bg-[#102a4e] hover:bg-blue-900 active:scale-95 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-all shadow-xs text-center"
-                    >
-                      <Camera className="w-4 h-4 text-sky-300 shrink-0" />
-                      <span>ถ่ายรูปหน้างาน (กล้องสด)</span>
-                    </label>
-
-                    <label
-                      htmlFor="mobile-gallery-photo-input"
-                      className="cursor-pointer flex-1 inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-100 active:scale-95 text-slate-800 text-xs font-semibold px-4 py-2.5 rounded-xl border border-slate-300 transition-all shadow-xs text-center"
-                    >
-                      <ImageIcon className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <span>เลือกจากอัลบั้มในเครื่อง</span>
-                    </label>
-                  </div>
-
-                  {/* Preset quick test photos */}
-                  <div className="pt-2 border-t border-slate-200 text-left">
-                    <span className="text-[10px] font-semibold text-slate-500 block mb-1">
-                      หรือเลือกรูปตัวอย่างทดสอบ:
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {PRESET_SAMPLE_PHOTOS.map((p, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => {
-                            setImageUrl(p.url);
-                            setFileReference(`IMG_${3600 + idx}.jpg`);
-                          }}
-                          className="text-[10px] bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50 px-2 py-1 rounded text-slate-700 transition-colors flex items-center gap-1 cursor-pointer"
-                        >
-                          <ImagePlus className="w-3 h-3 text-blue-600" />
-                          <span>{p.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <input
-                id="mobile-camera-capture-input"
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={handlePhotoInputChange}
-                className="sr-only opacity-0 absolute w-px h-px pointer-events-none -z-10"
-                tabIndex={-1}
-              />
-              <input
-                id="mobile-gallery-photo-input"
-                type="file"
-                accept="image/*"
-                onChange={handlePhotoInputChange}
-                className="sr-only opacity-0 absolute w-px h-px pointer-events-none -z-10"
-                tabIndex={-1}
-              />
-            </div>
-          </div>
-
           {/* Location / Zone */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -795,27 +661,26 @@ export const FindingModal: React.FC<FindingModalProps> = ({
             )}
           </div>
 
-          {/* Category Selection */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              4. หมวดหมู่งาน (Category)
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {CATEGORY_CHIPS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setCategory(c)}
-                  className={`text-[10px] sm:text-[11px] px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
-                    category === c
-                      ? 'bg-[#102a4e] border-[#102a4e] text-white font-semibold shadow-xs'
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  {c}
-                </button>
-              ))}
+          {/* Optional evidence after the field note */}
+          <div className="space-y-2">
+            <p className="text-xs font-bold text-slate-700">รูปหน้างาน (ถ้ามี)</p>
+            {imageUrl && <div className="flex items-center gap-3 rounded-xl border border-slate-200 p-2">
+              <img src={imageUrl} alt="รูปหน้างาน" className="h-16 w-16 rounded-lg object-cover" />
+              <button type="button" onClick={() => setImageUrl('')} className="text-xs text-rose-700">ลบรูป</button>
+            </div>}
+            <div className="flex gap-2">
+              <label htmlFor="mobile-camera-capture-input" className="flex-1 cursor-pointer rounded-xl border border-slate-300 px-3 py-2.5 text-center text-xs font-bold text-slate-800">
+                <Camera className="mr-1 inline h-4 w-4" /> ถ่ายรูป
+              </label>
+              <label htmlFor="mobile-gallery-photo-input" className="flex-1 cursor-pointer rounded-xl border border-slate-300 px-3 py-2.5 text-center text-xs font-bold text-slate-800">
+                <ImageIcon className="mr-1 inline h-4 w-4" /> เลือกรูป
+              </label>
             </div>
+            {isCompressingPhoto && <p role="status" className="text-xs text-slate-500">กำลังบันทึกรูป…</p>}
+            <input id="mobile-camera-capture-input" type="file" accept="image/*" capture="environment"
+              onChange={handlePhotoInputChange} className="sr-only" />
+            <input id="mobile-gallery-photo-input" type="file" accept="image/*"
+              onChange={handlePhotoInputChange} className="sr-only" />
           </div>
 
           {/* Status Selection */}
@@ -858,6 +723,30 @@ export const FindingModal: React.FC<FindingModalProps> = ({
 
             {showAdvancedFields && (
               <div className="space-y-3 mt-2.5 p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+          {/* Category Selection */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              หมวดหมู่งาน
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {CATEGORY_CHIPS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setCategory(c)}
+                  className={`text-[10px] sm:text-[11px] px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
+                    category === c
+                      ? 'bg-[#102a4e] border-[#102a4e] text-white font-semibold shadow-xs'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+
+
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
                     ชื่อหัวข้อภาษาอังกฤษ (Title)
