@@ -48,6 +48,7 @@ import { GoogleDriveModal } from './components/GoogleDriveModal';
 import { BackupRestoreModal } from './components/BackupRestoreModal';
 import { UpdateAvailableBanner } from './components/UpdateAvailableBanner';
 import { initPWAUpdateManager } from './utils/pwaManager';
+import { readEvidenceFile } from './utils/readEvidenceFile';
 import { Navigation } from './components/Navigation';
 import { MyDayView } from './components/MyDayView';
 import { JobWorkspaceView } from './components/JobWorkspaceView';
@@ -663,12 +664,7 @@ export default function App() {
   };
 
   const handleMollyReviewedTransfer = async (transfer: {target: string; amount: number; reference: string; date: string; reason: string}, file: File): Promise<Payment> => {
-    const attachment = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error('Could not save the transfer evidence.'));
-      reader.onload = () => resolve(String(reader.result));
-      reader.readAsDataURL(file);
-    });
+    const attachment = await readEvidenceFile(file);
     const [kind, id] = transfer.target.split(':');
     const slip = {id: crypto.randomUUID(), fileName: file.name, imageDataUrl: attachment,
       amount: transfer.amount, reference: transfer.reference.trim()};
