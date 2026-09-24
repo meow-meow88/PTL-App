@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, CheckCircle2, DollarSign, Calendar, CreditCard, FileText, AlertCircle } from 'lucide-react';
 import { Invoice, PaymentMethod, Payment, InspectionJob } from '../types';
+import { useLanguage } from '../i18n/translations';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -21,9 +22,9 @@ interface PaymentModalProps {
     date?: string;
     slips?: Payment['slips'];
     allocations?: Payment['allocations'];
-  }) => void;
+  }) => void | Promise<unknown>;
   onRecordAdvance: (params: {jobId: string; customerId: string; amount: number; paymentMethod: PaymentMethod;
-    reference?: string; notes?: string; date?: string; slips?: Payment['slips']}) => void;
+    reference?: string; notes?: string; date?: string; slips?: Payment['slips']}) => void | Promise<unknown>;
 }
 
 const PAYMENT_METHODS: PaymentMethod[] = [
@@ -33,6 +34,10 @@ const PAYMENT_METHODS: PaymentMethod[] = [
   'Credit Card',
   'Other',
 ];
+const TH_METHODS: Record<PaymentMethod, string> = {
+  PromptPay: 'พร้อมเพย์', 'Bank Transfer': 'โอนธนาคาร', Cash: 'เงินสด',
+  'Credit Card': 'บัตรเครดิต', Other: 'อื่น ๆ',
+};
 
 export const PaymentModal: React.FC<PaymentModalProps> = ({
   isOpen,
@@ -45,6 +50,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   onRecordPayment,
   onRecordAdvance,
 }) => {
+  const { lang } = useLanguage();
+  const th = lang === 'th';
+  const label = (thai: string, english: string) => th ? thai : english;
   const [mode, setMode] = useState<'invoice' | 'advance'>(presetAdvanceJobId ? 'advance' : 'invoice');
   const [advanceJobId, setAdvanceJobId] = useState(presetAdvanceJobId || '');
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>(
@@ -58,6 +66,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [slips, setSlips] = useState<NonNullable<Payment['slips']>>([]);
   const [allocations, setAllocations] = useState<Record<number, string>>({});
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const targetInvoice = invoices.find((inv) => inv.id === selectedInvoiceId);
   const linkedJob = jobs.find((j) => j.id === targetInvoice?.jobId);
@@ -88,12 +97,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     if (!files?.length) return;
     try {
       const converted = await Promise.all(Array.from(files).map((file) => new Promise<NonNullable<Payment['slips']>[number]>((resolve, reject) => {
-        if (!file.type.startsWith('image/')) return reject(new Error('Please select image files.'));
+        if (!file.type.startsWith('image/')) return reject(new Error(label('กรุณาเลือกรูปสลิป', 'Please select image files.')));
         const reader = new FileReader();
-        reader.onerror = () => reject(new Error('Could not read the slip image.'));
+        reader.onerror = () => reject(new Error(label('อ่านรูปสลิปไม่ได้', 'Could not read the slip image.')));
         reader.onload = () => {
           const img = new Image();
-          img.onerror = () => reject(new Error('Could not open the slip image.'));
+          img.onerror = () => reject(new Error(label('เปิดรูปสลิปไม่ได้', 'Could not open the slip image.')));
           img.onload = () => {
             const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
             const canvas = document.createElement('canvas');
@@ -141,49 +150,50 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError(null);
 
     if (mode === 'invoice' && !targetInvoice) {
-      setValidationError('Please select a valid invoice');
+      setValidationError(label('กรุณาเลือกใบแจ้งหนี้ที่มีอยู่ในระบบ', 'Please select a valid invoice'));
       return;
     }
 
     const parsedAmount = parseFloat(amount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      setValidationError('Payment amount must be greater than 0.');
+      setValidationError(label('ยอดรับเงินต้องมากกว่า 0', 'Payment amount must be greater than 0.'));
       return;
     }
 
     if (mode === 'invoice' && targetInvoice && targetInvoice.balanceDue <= 0) {
-      setValidationError('Payment cannot exceed the outstanding balance of ฿0.');
+      setValidationError(label('ใบแจ้งหนี้นี้ไม่มียอดค้างชำระ', 'Payment cannot exceed the outstanding balance of ฿0.'));
       return;
     }
 
     if (mode === 'invoice' && targetInvoice && parsedAmount > (targetInvoice.balanceDue ?? 0)) {
       setValidationError(
-        `Payment cannot exceed the outstanding balance of ฿${(targetInvoice.balanceDue ?? 0).toLocaleString()}.`
+        label(`ยอดรับเกินยอดคงค้าง ฿${(targetInvoice.balanceDue ?? 0).toLocaleString()}`, `Payment cannot exceed the outstanding balance of ฿${(targetInvoice.balanceDue ?? 0).toLocaleString()}.`)
       );
       return;
     }
     if (slips.length && slipTotal !== round(parsedAmount)) {
-      setValidationError('Sum of slip amounts must match the received amount.'); return;
+      setValidationError(label('ยอดรวมในสลิปต้องเท่ากับยอดรับเงิน', 'Sum of slip amounts must match the received amount.')); return;
     }
     if (mode === 'invoice' && allocatedTotal !== round(parsedAmount)) {
-      setValidationError('Please allocate the full received amount to the invoice items.'); return;
+      setValidationError(label('กรุณาแยกยอดรับให้ครบตามรายการในใบแจ้งหนี้', 'Please allocate the full received amount to the invoice items.')); return;
     }
 
+    setSaving(true);
     try {
       if (mode === 'advance') {
         const job = jobs.find((j) => j.id === advanceJobId);
-        if (!job) { setValidationError('Select the new job for this material advance.'); return; }
-        onRecordAdvance({jobId: job.id, customerId: job.customerId || job.clientId,
+        if (!job) { setValidationError(label('เลือกงานที่จะรับมัดจำ', 'Select the new job for this material advance.')); return; }
+        await onRecordAdvance({jobId: job.id, customerId: job.customerId || job.clientId,
           amount: parsedAmount, paymentMethod, reference, notes, date, slips: slips.length ? slips : undefined});
         onClose(); return;
       }
       if (!targetInvoice) return;
-      onRecordPayment({
+      await onRecordPayment({
         invoiceId: targetInvoice.id,
         jobId: targetInvoice.jobId,
         customerId: targetInvoice.customerId,
@@ -201,13 +211,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       });
       onClose();
     } catch (err: any) {
-      setValidationError(err?.message || 'Failed to record payment.');
-    }
+      setValidationError(err?.message || label('บันทึกรับเงินไม่สำเร็จ', 'Failed to record payment.'));
+    } finally { setSaving(false); }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl relative border border-slate-200">
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+      <div className="bg-white rounded-2xl max-w-md w-full max-h-[calc(100dvh-1.5rem)] overflow-y-auto overscroll-contain p-4 sm:p-6 shadow-2xl relative border border-slate-200 min-w-0">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 bg-slate-100 p-2 rounded-full transition-colors cursor-pointer"
@@ -220,88 +230,90 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             <span className="p-1.5 bg-emerald-100 text-emerald-800 rounded-lg">
               <CheckCircle2 className="w-4 h-4 text-emerald-700" />
             </span>
-            <h2 className="text-lg font-black text-slate-900">Record Payment</h2>
+            <h2 className="text-lg font-black text-slate-900 pr-9">{label('บันทึกรับเงิน', 'Record Payment')}</h2>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Record an invoice payment or a separate material advance for a continuing job
+            {label('แยกชำระใบแจ้งหนี้เดิมกับเงินมัดจำงานใหม่', 'Record an invoice payment or a separate material advance for a continuing job')}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3.5">
-          <div className="flex gap-2 text-xs font-bold">
-            <button type="button" onClick={() => setMode('invoice')} className={`px-3 py-2 rounded-lg ${mode === 'invoice' ? 'bg-blue-700 text-white' : 'bg-slate-100'}`}>Invoice payment</button>
-            <button type="button" onClick={() => {setMode('advance'); setAmount(''); setAllocations({}); setSlips([]);}} className={`px-3 py-2 rounded-lg ${mode === 'advance' ? 'bg-blue-700 text-white' : 'bg-slate-100'}`}>New job · material advance</button>
+          <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+            <button type="button" onClick={() => setMode('invoice')} className={`min-w-0 px-2 py-2 rounded-lg ${mode === 'invoice' ? 'bg-blue-700 text-white' : 'bg-slate-100'}`}>{label('ชำระใบแจ้งหนี้', 'Invoice payment')}</button>
+            <button type="button" onClick={() => {setMode('advance'); setAmount(''); setAllocations({}); setSlips([]);}} className={`min-w-0 px-2 py-2 rounded-lg ${mode === 'advance' ? 'bg-blue-700 text-white' : 'bg-slate-100'}`}>{label('มัดจำงานใหม่', 'New job · material advance')}</button>
           </div>
-          {mode === 'advance' && <label className="block text-xs font-bold">Job receiving the advance *
-            <select required value={advanceJobId} onChange={(e) => setAdvanceJobId(e.target.value)} className="w-full p-2 border rounded-lg mt-1">
-              <option value="">Choose the new job</option>{jobs.map((j) => <option key={j.id} value={j.id}>{j.customerName} · {j.villaName} · {j.serviceType}</option>)}
-            </select><span className="block font-normal text-slate-500 mt-1">A separate receipt will show this as an advance. Apply it to this job’s final invoice later.</span>
+          {mode === 'advance' && <label className="block text-xs font-bold">{label('งานที่รับมัดจำ *', 'Job receiving the advance *')}
+            <select required value={advanceJobId} onChange={(e) => setAdvanceJobId(e.target.value)} className="w-full min-w-0 p-2 border rounded-lg mt-1">
+              <option value="">{label('เลือกงาน', 'Choose the new job')}</option>{jobs.map((j) => <option key={j.id} value={j.id}>{j.customerName} · {j.villaName} · {j.serviceType}</option>)}
+            </select><span className="block font-normal text-slate-500 mt-1">{label('ใบเสร็จจะแสดงเป็นเงินมัดจำ แยกจากยอดงานเก่า', 'A separate receipt will show this as an advance. Apply it to this job’s final invoice later.')}</span>
           </label>}
           {/* Invoice Selection */}
           {mode === 'invoice' && <div>
             <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-              Select Invoice *
+              {label('เลือกใบแจ้งหนี้ *', 'Select Invoice *')}
             </label>
             <select
               value={selectedInvoiceId}
               onChange={(e) => handleInvoiceChange(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 focus:ring-2 focus:ring-emerald-500 bg-white"
+              className="w-full min-w-0 px-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 focus:ring-2 focus:ring-emerald-500 bg-white"
             >
+              {!invoices.length && <option value="">{label('ไม่มีใบแจ้งหนี้ — สร้างก่อนบันทึกยอดงานเก่า', 'No invoice — create one first')}</option>}
               {invoices.map((inv) => (
                 <option key={inv.id} value={inv.id}>
-                  {inv.invoiceNumber} • ฿{(inv.total ?? 0).toLocaleString()} (Due: ฿{(inv.balanceDue ?? 0).toLocaleString()}) - {inv.status}
+                  {inv.invoiceNumber} • {label('คงค้าง', 'Due')} ฿{(inv.balanceDue ?? 0).toLocaleString()}
                 </option>
               ))}
             </select>
+            {!invoices.length && <p className="mt-1 text-xs text-amber-800">{label('ถ้าเป็นยอดงานเก่า กรุณาสร้างใบแจ้งหนี้ในแท็บการเงินก่อน ไม่ควรบันทึกเป็นเงินมัดจำ', 'Create the prior job invoice in Financial first; do not record old debt as an advance.')}</p>}
             {targetInvoice && (
               <div className="mt-1.5 p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs flex items-center justify-between">
                 <div>
-                  <span className="text-slate-500">Invoice Total: </span>
+                  <span className="text-slate-500">{label('ยอดรวม: ', 'Invoice Total: ')}</span>
                   <strong className="text-slate-900">฿{(targetInvoice.total ?? 0).toLocaleString()}</strong>
                 </div>
                 <div>
-                  <span className="text-slate-500">Balance Due: </span>
+                  <span className="text-slate-500">{label('คงค้าง: ', 'Balance Due: ')}</span>
                   <strong className={(targetInvoice.balanceDue ?? 0) > 0 ? 'text-rose-600' : 'text-emerald-600'}>
                     ฿{(targetInvoice.balanceDue ?? 0).toLocaleString()}
                   </strong>
                 </div>
               </div>
             )}
-            {targetInvoice && <div className="mt-2 text-xs text-slate-700 space-y-1">
+            {targetInvoice && <details className="mt-2 text-xs text-slate-700 space-y-1"><summary className="cursor-pointer">{label('ดูรายละเอียดเอกสาร', 'Document details')}</summary>
               <p>Invoice: subtotal ฿{targetInvoice.subtotal.toLocaleString()} · discount ฿{targetInvoice.discount.toLocaleString()} · tax ฿{targetInvoice.tax.toLocaleString()}</p>
               <p>Received before ฿{targetInvoice.amountPaid.toLocaleString()} · remaining ฿{targetInvoice.balanceDue.toLocaleString()}</p>
               {quoteTotal > 0 && <p>Linked quotation total: ฿{quoteTotal.toLocaleString()}{Math.abs(quoteTotal - targetInvoice.total) > 0.01 ? ' · Differs from invoice: review document versions' : ''}</p>}
-            </div>}
+            </details>}
           </div>}
 
           {/* Payment Method */}
           <div>
             <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1.5">
-              Payment Method *
+              {label('วิธีรับเงิน *', 'Payment Method *')}
             </label>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
               {PAYMENT_METHODS.map((pm) => (
                 <button
                   type="button"
                   key={pm}
                   onClick={() => setPaymentMethod(pm)}
-                  className={`py-1.5 px-2 rounded-lg text-xs font-bold border text-center transition-all cursor-pointer truncate ${
+                  className={`py-1.5 px-2 rounded-lg text-xs font-bold border text-center transition-all cursor-pointer ${
                     paymentMethod === pm
                       ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
                       : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                   }`}
                 >
-                  {pm}
+                  {th ? TH_METHODS[pm] : pm}
                 </button>
               ))}
             </div>
           </div>
 
           {/* Amount & Date */}
-          <div className="grid grid-cols-2 gap-2.5">
-            <div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="min-w-0">
               <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                Amount Received (฿) *
+                {label('ยอดรับจริง (บาท) *', 'Amount Received (฿) *')}
               </label>
               <input
                 type="number"
@@ -318,66 +330,67 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               />
               {mode === 'invoice' && targetInvoice && (
                 <p className="text-[10px] text-slate-500 mt-1">
-                  Max payable: ฿{(targetInvoice.balanceDue ?? 0).toLocaleString()}
+                  {label('รับได้สูงสุด', 'Max payable')}: ฿{(targetInvoice.balanceDue ?? 0).toLocaleString()}
                 </p>
               )}
             </div>
 
-            <div>
+            <div className="min-w-0">
               <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                Date Received
+                {label('วันที่รับเงิน', 'Date Received')}
               </label>
               <input
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800"
+                className="w-full min-w-0 max-w-full px-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800"
               />
             </div>
           </div>
 
           {/* Molly compares the invoice with confirmed transfer amounts. Image text is never guessed. */}
-          {mode === 'invoice' && <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-2">
+          {mode === 'invoice' && targetInvoice && <details className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-2">
+            <summary className="cursor-pointer text-sm font-bold text-blue-800">{label('แยกยอดตามรายการใบแจ้งหนี้', 'Allocate invoice items')} · ฿{allocatedTotal.toLocaleString()} / ฿{(Number(amount) || 0).toLocaleString()}</summary>
             <div className="flex items-center justify-between gap-2">
-              <strong className="text-sm text-slate-900">Molly · {targetInvoice?.invoiceNumber || 'Invoice'} breakdown</strong>
-              <button type="button" onClick={suggestAllocations} className="text-xs font-bold text-blue-700 underline">Suggest allocation</button>
+              <strong className="text-sm text-slate-900">Molly · {targetInvoice.invoiceNumber}</strong>
+              <button type="button" onClick={suggestAllocations} className="text-xs font-bold text-blue-700 underline">{label('แนะนำการแยกยอด', 'Suggest allocation')}</button>
             </div>
-            <p className="text-xs text-slate-600">Check each invoice line before confirming. A partial payment may cover only some items.</p>
+            <p className="text-xs text-slate-600">{label('ตรวจแต่ละรายการก่อนยืนยัน ยอดที่รับอาจชำระเพียงบางรายการ', 'Check each invoice line before confirming. A partial payment may cover only some items.')}</p>
             {targetInvoice?.items.map((item, index) => (
               <label key={`${targetInvoice.id}-${index}`} className="flex items-center justify-between gap-2 text-xs text-slate-700">
                 <span className="min-w-0 flex-1 truncate">{item.description} · ฿{item.amount.toLocaleString()}</span>
-                <input type="number" min="0" step="0.01" inputMode="decimal" aria-label={`Received for ${item.description}`}
+                <input type="number" min="0" step="0.01" inputMode="decimal" aria-label={`${label('ยอดรับ', 'Received for')} ${item.description}`}
                   value={allocations[index] || ''} onChange={(e) => setAllocations((prev) => ({ ...prev, [index]: e.target.value }))}
-                  placeholder="Paid ฿" className="w-28 p-2 border rounded-lg text-right" />
+                  placeholder={label('รับ ฿', 'Paid ฿')} className="w-24 min-w-0 p-2 border rounded-lg text-right" />
               </label>
             ))}
             <label className="flex items-center justify-between gap-2 text-xs text-slate-700">
-              <span>Other invoice adjustments (discount/tax if applicable)</span>
+              <span>{label('ยอดอื่น / ส่วนลด / ภาษี', 'Other invoice adjustments (discount/tax if applicable)')}</span>
               <input type="number" min="0" step="0.01" inputMode="decimal" value={allocations[-1] || ''}
                 onChange={(e) => setAllocations((prev) => ({ ...prev, [-1]: e.target.value }))}
-                placeholder="Paid ฿" className="w-28 p-2 border rounded-lg text-right" />
+                placeholder={label('รับ ฿', 'Paid ฿')} className="w-24 min-w-0 p-2 border rounded-lg text-right" />
             </label>
-            <div className="text-xs font-bold text-right">Allocated ฿{allocatedTotal.toLocaleString()} / Received ฿{(Number(amount) || 0).toLocaleString()}</div>
-          </div>}
+            <div className="text-xs font-bold text-right">{label('แยกแล้ว', 'Allocated')} ฿{allocatedTotal.toLocaleString()} / {label('รับ', 'Received')} ฿{(Number(amount) || 0).toLocaleString()}</div>
+          </details>}
 
           <div className="rounded-xl border border-slate-200 p-3 space-y-2">
-            <label className="block text-xs font-bold">Transfer slips (multiple images)</label>
+            <label className="block text-xs font-bold">{label('รูปสลิปโอนเงิน (หลายใบได้)', 'Transfer slips (multiple images)')}</label>
             <input type="file" accept="image/*" multiple onChange={(e) => { void handleSlipFiles(e.target.files); e.target.value = ''; }}
-              className="block w-full text-xs" />
+              className="block w-full min-w-0 text-xs" />
             {slips.map((slip) => (
-              <div key={slip.id} className="flex flex-wrap items-center gap-2 text-xs">
+              <div key={slip.id} className="flex flex-wrap items-center gap-2 text-xs min-w-0">
                 <img src={slip.imageDataUrl} alt={slip.fileName} className="w-10 h-10 object-cover rounded" />
-                <span className="truncate flex-1">{slip.fileName}</span>
+                <span className="truncate flex-1 min-w-0">{slip.fileName}</span>
                 <input type="number" min="0" step="0.01" inputMode="decimal" value={slip.amount || ''} placeholder="฿"
                   aria-label={`Amount for ${slip.fileName}`} onChange={(e) => setSlips((prev) => prev.map((s) => s.id === slip.id ? { ...s, amount: Number(e.target.value) } : s))}
                   className="w-24 p-2 border rounded-lg" />
-                <input type="text" value={slip.reference || ''} placeholder="Transfer ref"
+                <input type="text" value={slip.reference || ''} placeholder={label('เลขอ้างอิง', 'Transfer ref')}
                   aria-label={`Reference for ${slip.fileName}`} onChange={(e) => setSlips((prev) => prev.map((s) => s.id === slip.id ? { ...s, reference: e.target.value } : s))}
                   className="w-28 p-2 border rounded-lg" />
                 <button type="button" onClick={() => setSlips((prev) => prev.filter((s) => s.id !== slip.id))} className="text-rose-600 font-bold">×</button>
               </div>
             ))}
-            {slips.length > 0 && <p className="text-xs text-slate-600">Slips total: ฿{slipTotal.toLocaleString()} · Please verify the amounts against the images.</p>}
+            {slips.length > 0 && <p className="text-xs text-slate-600">{label('ยอดรวมสลิป', 'Slips total')}: ฿{slipTotal.toLocaleString()} · {label('โปรดตรวจยอดจากภาพ', 'Please verify the amounts against the images.')}</p>}
           </div>
 
           {/* Validation Alert */}
@@ -392,11 +405,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           <div className="space-y-2">
             <div>
               <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                Transfer Ref / Slip / Check No.
+                {label('เลขอ้างอิงการโอน / เช็ค', 'Transfer Ref / Slip / Check No.')}
               </label>
               <input
                 type="text"
-                placeholder="e.g. KBANK-88491, PP-9921, or Cash on site"
+                placeholder={label('เช่น เลขอ้างอิงในสลิป', 'e.g. KBANK-88491, PP-9921, or Cash on site')}
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800"
@@ -405,11 +418,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
             <div>
               <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                Notes
+                {label('หมายเหตุ', 'Notes')}
               </label>
               <input
                 type="text"
-                placeholder="e.g. 50% deposit received before parts procurement"
+                placeholder={label('เช่น มัดจำค่าวัสดุ', 'e.g. 50% deposit received before parts procurement')}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800"
@@ -424,13 +437,14 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               onClick={onClose}
               className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 rounded-xl cursor-pointer"
             >
-              Cancel
+              {label('ยกเลิก', 'Cancel')}
             </button>
             <button
               type="submit"
+              disabled={saving || (mode === 'invoice' && !targetInvoice)}
               className="px-5 py-2.5 text-xs sm:text-sm font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
             >
-              Confirm Payment
+              {saving ? label('กำลังบันทึก…', 'Saving…') : label('ยืนยันรับเงิน', 'Confirm Payment')}
             </button>
           </div>
         </form>
