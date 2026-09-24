@@ -48,6 +48,7 @@ interface JobCardProps {
   onUpdateJobStatus?: (jobId: string, status: InspectionJob['status']) => void;
   onCustomerApprove?: (jobId: string) => void;
   onFinishFieldWork?: (jobId: string) => void;
+  onOpenFinancialJob?: (jobId: string, purpose: 'invoice' | 'advance') => void;
   onSelectProperty?: (propertyId: string) => void;
   onSelectCustomer?: (customerId: string) => void;
 }
@@ -68,6 +69,7 @@ export const JobCard: React.FC<JobCardProps> = ({
   onUpdateJobStatus,
   onCustomerApprove,
   onFinishFieldWork,
+  onOpenFinancialJob,
   onSelectProperty,
   onSelectCustomer,
 }) => {
@@ -147,7 +149,8 @@ export const JobCard: React.FC<JobCardProps> = ({
         }
         break;
       case 'record_deposit':
-        onOpenQuotation(job.id);
+        if (onOpenFinancialJob) onOpenFinancialJob(job.id, 'advance');
+        else onOpenInspection(job.id);
         break;
       case 'schedule_job':
         if (onOpenScheduleModal) {
@@ -211,7 +214,8 @@ export const JobCard: React.FC<JobCardProps> = ({
         break;
       case 'create_invoice_collect':
       case 'record_payment':
-        onOpenQuotation(job.id);
+        if (onOpenFinancialJob) onOpenFinancialJob(job.id, 'invoice');
+        else onOpenInspection(job.id);
         break;
       case 'close_job':
         if (onUpdateJobStatus) {
@@ -268,7 +272,8 @@ export const JobCard: React.FC<JobCardProps> = ({
         }
         break;
       case 'record_payment':
-        onOpenQuotation(job.id);
+        if (onOpenFinancialJob) onOpenFinancialJob(job.id, 'invoice');
+        else onOpenInspection(job.id);
         break;
       case 'view_report':
         onOpenQuotation(job.id);
