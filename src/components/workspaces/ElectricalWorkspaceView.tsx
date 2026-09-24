@@ -97,20 +97,10 @@ export const ElectricalWorkspaceView: React.FC<ElectricalWorkspaceViewProps> = (
   const [isSharing, setIsSharing] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
-  // Determine if actual field information exists
-  const hasActualFieldInfo = Boolean(
-    job.scopeConfirmed ||
-    assessment.hasAssessmentStarted ||
-    (assessment.observedFact && assessment.observedFact.trim().length > 0) ||
-    (assessment.confirmedFinding && assessment.confirmedFinding.trim().length > 0) ||
-    (assessment.testPerformed && assessment.testPerformed.trim().length > 0) ||
-    (job.evidencePhotos && job.evidencePhotos.length > 0)
-  );
-
-  // Field screen mode: 'simple' for focused initial field arrival vs 'full' for complete engineering workspace
-  const [fieldScreenMode, setFieldScreenMode] = useState<'simple' | 'full'>(() => {
-    return hasActualFieldInfo && job.scopeConfirmed ? 'full' : 'simple';
-  });
+  // Reopening a job should always start in the field-friendly view. Technical
+  // details remain available on demand, including after confirming the scope.
+  const [fieldScreenMode, setFieldScreenMode] = useState<'simple' | 'full'>('simple');
+  const [fieldNote, setFieldNote] = useState(assessment.observedFact || '');
 
   const [showExistingInfo, setShowExistingInfo] = useState(false);
   const [isAddFindingOpen, setIsAddFindingOpen] = useState(false);
@@ -175,6 +165,13 @@ export const ElectricalWorkspaceView: React.FC<ElectricalWorkspaceViewProps> = (
     setTimeout(() => setShareFeedback(null), 3000);
   };
 
+  const handleSaveFieldNote = () => {
+    const note = fieldNote.trim();
+    if (!note) return;
+    updateAssessment((prev) => ({...prev, observedFact: note, hasAssessmentStarted: true}));
+    setShareFeedback(isTh ? 'บันทึกสิ่งที่พบแล้ว' : 'Field note saved');
+  };
+
   // Sync assessment to job when changed
   const updateAssessment = (updater: (prev: ElectricalAssessmentData) => ElectricalAssessmentData) => {
     setAssessment((prev) => {
@@ -226,6 +223,7 @@ export const ElectricalWorkspaceView: React.FC<ElectricalWorkspaceViewProps> = (
   // Handle Photo Upload
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
 
     setIsUploadingPhoto(true);
@@ -246,8 +244,14 @@ export const ElectricalWorkspaceView: React.FC<ElectricalWorkspaceViewProps> = (
       }));
       setIsUploadingPhoto(false);
     };
-    reader.onerror = () => setIsUploadingPhoto(false);
-    reader.readAsDataURL(file);
+    reader.onerror = () => {
+      setIsUploadingPhoto(false);
+      setShareFeedback(isTh ? 'อ่านรูปไม่สำเร็จ กรุณาลองอีกครั้ง' : 'Could not read the photo. Please try again.');
+    };
+    try { reader.readAsDataURL(file); } catch {
+      setIsUploadingPhoto(false);
+      setShareFeedback(isTh ? 'อ่านรูปไม่สำเร็จ กรุณาลองอีกครั้ง' : 'Could not read the photo. Please try again.');
+    }
   };
 
   const hasInspectionQuotation = Boolean(
@@ -264,23 +268,25 @@ export const ElectricalWorkspaceView: React.FC<ElectricalWorkspaceViewProps> = (
   const isScopeConfirmed = Boolean(job.scopeConfirmed);
 
   const handleConfirmScope = () => {
+    if (!assessment.confirmedFinding?.trim() || !assessment.testPerformed?.trim()) {
+      setShareFeedback(isTh
+        ? 'กรอกข้อเท็จจริงที่ยืนยันได้และผลการทดสอบจริงก่อนยืนยันขอบเขตงาน'
+        : 'Record a confirmed finding and an actual test before confirming scope');
+      return;
+    }
     const nowIso = new Date().toISOString();
     updateAssessment((prev) => ({
       ...prev,
       hasAssessmentStarted: true,
-      observedFact: prev.observedFact || prev.confirmedFactTh,
-      confirmedFinding: prev.confirmedFinding || prev.confirmedFactTh,
-      testPerformed: prev.testPerformed || 'วัดแรงดันไฟฟ้า AC (L-N) และตรวจสอบขั้ว/สวิตช์',
-      testResultText: prev.testResultText || (prev.testResult === 'Passed' ? 'แรงดันไฟฟ้าปกติ 228V' : 'รอเปลี่ยนอะไหล่เพื่อทดสอบ'),
     }));
     onUpdateJob((prev) => ({
       ...prev,
       scopeConfirmed: true,
       scopeConfirmedAt: nowIso,
-      observedFact: assessment.observedFact || assessment.confirmedFactTh,
-      confirmedFindings: assessment.confirmedFinding || assessment.confirmedFactTh,
-      testPerformed: assessment.testPerformed || 'วัดแรงดันไฟฟ้า AC (L-N) และตรวจสอบขั้ว/สวิตช์',
-      testResultText: assessment.testResultText || (assessment.testResult === 'Passed' ? 'แรงดันไฟฟ้าปกติ 228V' : 'รอเปลี่ยนอะไหล่เพื่อทดสอบ'),
+      observedFact: assessment.observedFact,
+      confirmedFindings: assessment.confirmedFinding,
+      testPerformed: assessment.testPerformed,
+      testResultText: assessment.testResultText,
       recommendedNextTest: assessment.recommendedNextTest,
       unknownItems: assessment.unknownItems,
     }));
@@ -298,295 +304,92 @@ export const ElectricalWorkspaceView: React.FC<ElectricalWorkspaceViewProps> = (
 
   if (fieldScreenMode === 'simple') {
     return (
-      <div className="space-y-4 pb-20 max-w-3xl mx-auto">
-        {/* Simple Field Screen Card */}
-        <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm space-y-4">
-          {/* Top Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs bg-amber-100 text-amber-900 font-extrabold px-2.5 py-0.5 rounded-full border border-amber-300 flex items-center gap-1">
-                  <Zap className="w-3 h-3 text-amber-600" />
-                  <span>{job.jobPurpose === 'REPLACEMENT'
-                    ? (isTh ? 'งานเปลี่ยนอุปกรณ์ไฟฟ้า' : 'Electrical Replacement')
-                    : job.jobPurpose === 'INSTALLATION'
-                    ? (isTh ? 'งานติดตั้งไฟฟ้า' : 'Electrical Installation')
-                    : (isTh ? 'งานตรวจเช็กระบบไฟฟ้า' : 'Electrical Inspection')}</span>
-                </span>
-                <span className="text-[11px] text-slate-400 font-mono">Job #{job.id}</span>
-              </div>
-              <h1 className="text-base sm:text-xl font-black text-slate-900 mt-1">
-                {job.villaName || job.propertyLocation}
-              </h1>
+      <div className="max-w-2xl mx-auto pb-24">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm space-y-5">
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
+              <span className="rounded-full bg-blue-50 px-2.5 py-1 text-blue-800">
+                {job.jobPurpose === 'REPLACEMENT'
+                  ? (isTh ? 'เปลี่ยนอุปกรณ์' : 'Replacement')
+                  : job.jobPurpose === 'INSTALLATION'
+                    ? (isTh ? 'ติดตั้ง' : 'Installation')
+                    : (isTh ? 'ตรวจเช็กไฟฟ้า' : 'Electrical inspection')}
+              </span>
+              <span>{job.scopeConfirmed
+                ? (isTh ? 'บันทึกผลตรวจแล้ว' : 'Scope confirmed')
+                : (isTh ? 'กำลังตรวจหน้างาน' : 'On site')}</span>
             </div>
+            <h1 className="text-xl font-bold text-slate-950">{job.villaName || job.propertyLocation}</h1>
+            <p className="text-sm text-slate-600">{job.customerName}
+              {job.scheduledTime ? ` · ${job.scheduledTime}` : ''}
+            </p>
+          </div>
 
-            <button
-              type="button"
-              onClick={() => setFieldScreenMode('full')}
-              className="text-xs font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200 transition-colors self-start sm:self-auto cursor-pointer"
-            >
-              {isTh ? 'ดูมุมมองเชิงช่างเต็มรูปแบบ →' : 'Full Technical View →'}
+          <div className="rounded-xl bg-amber-50 px-4 py-3 border border-amber-100">
+            <p className="text-xs font-bold text-amber-900 mb-1">{isTh ? 'ลูกค้าแจ้ง' : 'Reported by customer'}</p>
+            <p className="text-sm text-slate-800 leading-relaxed">
+              {job.requestDescription || job.notes || (isTh ? 'ยังไม่มีรายละเอียด' : 'No description yet')}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="field-note" className="block text-sm font-bold text-slate-900">
+              {isTh ? 'พบอะไรที่หน้างาน?' : 'What did you observe on site?'}
+            </label>
+            <textarea
+              id="field-note"
+              rows={4}
+              value={fieldNote}
+              onChange={(event) => setFieldNote(event.target.value)}
+              onBlur={() => {
+                if (fieldNote.trim() && fieldNote.trim() !== (assessment.observedFact || '').trim()) handleSaveFieldNote();
+              }}
+              placeholder={isTh
+                ? 'จดเฉพาะสิ่งที่เห็นหรือทดสอบจริง เช่น เบรกเกอร์ย่อยหมายเลข 1 ทริป'
+                : 'Record only what you saw or tested, e.g. sub-breaker 1 tripped'}
+              className="w-full rounded-xl border border-slate-300 bg-white p-3 text-base text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 resize-y"
+            />
+            <p className="text-xs text-slate-500">
+              {isTh ? 'ข้อสันนิษฐานและราคาซ่อมค่อยระบุหลังตรวจยืนยัน' : 'Add causes and repair pricing after the inspection.'}
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button type="button" onClick={handleSaveFieldNote} disabled={!fieldNote.trim()}
+              className="min-h-12 flex-1 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:opacity-50">
+              {isTh ? 'บันทึกสิ่งที่พบ' : 'Save observation'}
             </button>
+            <button type="button" onClick={() => fieldPhotoInputRef.current?.click()} disabled={isUploadingPhoto}
+              className="min-h-12 flex-1 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-900 flex items-center justify-center gap-2 disabled:opacity-50">
+              <Camera className="h-4 w-4" />
+              {isUploadingPhoto ? (isTh ? 'กำลังบันทึกรูป…' : 'Saving photo…') : (isTh ? 'ถ่ายรูป / เลือกรูป' : 'Take / choose photo')}
+            </button>
+            <input type="file" ref={fieldPhotoInputRef} onChange={handlePhotoUpload}
+              accept="image/*" capture="environment" className="hidden" />
           </div>
 
-          {/* Feedback banner if any */}
-          {shareFeedback && (
-            <div className="p-2.5 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200 text-xs font-bold flex items-center gap-2">
-              <Check className="w-4 h-4 text-emerald-600" />
-              <span>{shareFeedback}</span>
-            </div>
-          )}
-
-          {/* Essential Information Grid (Customer, Location, Reported Issue, Date/Time) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-              <span className="text-[10px] uppercase font-black text-slate-500 block mb-0.5">
-                {isTh ? 'ลูกค้า (Customer):' : 'Customer:'}
-              </span>
-              <div className="font-bold text-slate-900 text-sm">{job.customerName}</div>
-              {job.customerPhone && (
-                <div className="text-slate-500 text-[11px] mt-0.5 flex items-center gap-1">
-                  <Phone className="w-3 h-3 text-slate-400" />
-                  <span>{job.customerPhone}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-              <span className="text-[10px] uppercase font-black text-slate-500 block mb-0.5">
-                {isTh ? 'วันและเวลานัดหมาย (Date / Time):' : 'Date / Time:'}
-              </span>
-              <div className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-blue-600" />
-                <span>{job.scheduledDate || job.inspectionDate || 'Today'}</span>
-                <span>•</span>
-                <span className="text-blue-700">{job.scheduledTime || 'Scheduled Visit'}</span>
-              </div>
-            </div>
-
-            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 sm:col-span-2">
-              <span className="text-[10px] uppercase font-black text-slate-500 block mb-0.5">
-                {isTh ? 'อาการที่ลูกค้าแจ้ง (Reported Issue):' : 'Reported Issue:'}
-              </span>
-              <div className="font-semibold text-slate-800 text-xs leading-relaxed">
-                {job.requestDescription || job.notes || 'Sub-breaker trips / On-site electrical inspection required'}
-              </div>
-            </div>
-          </div>
-
-          {/* Primary Actions (Talk to Mr. Big, Add Finding, Take Photo) */}
-          <div className="pt-2">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-2">
-              {isTh ? 'การดำเนินการหลักหน้างาน (Primary Field Actions)' : 'Primary Field Actions'}
-            </span>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              {/* Talk to Mr. Big */}
-              <button
-                type="button"
-                onClick={() => {
-                  updateAssessment((prev) => ({ ...prev, hasAssessmentStarted: true }));
-                  setFieldScreenMode('full');
-                }}
-                className="p-3.5 bg-gradient-to-br from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl shadow-xs transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer active:scale-95 text-center"
-              >
-                <Zap className="w-5 h-5 text-slate-950 fill-slate-950" />
-                <span className="text-xs">{job.jobPurpose === 'REPLACEMENT' ? (isTh ? 'ตรวจหน้างานก่อนเปลี่ยน' : 'Verify before replacement') : (isTh ? 'บันทึกผลตรวจ' : 'Record findings')}</span>
-                <span className="text-[10px] font-semibold text-amber-950/80">{isTh ? 'ยืนยันข้อมูลวงจรและขอบเขตงาน' : 'Confirm circuit and work scope'}</span>
-              </button>
-
-              {/* Add Finding */}
-              <button
-                type="button"
-                onClick={() => setIsAddFindingOpen(true)}
-                className="p-3.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-xs transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer active:scale-95 text-center"
-              >
-                <Plus className="w-5 h-5 text-emerald-400" />
-                <span className="text-xs">➕ เพิ่มข้อเท็จจริง (Add Finding)</span>
-                <span className="text-[10px] text-slate-400">จดผลที่ตรวจพบ</span>
-              </button>
-
-              {/* Take Photo */}
-              <button
-                type="button"
-                onClick={() => fieldPhotoInputRef.current?.click()}
-                disabled={isUploadingPhoto}
-                className="p-3.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-xs transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50 text-center"
-              >
-                <Camera className="w-5 h-5 text-white" />
-                <span className="text-xs">
-                  {isUploadingPhoto ? 'กำลังบันทึกรูป...' : '📷 ถ่ายรูปหลักฐาน (Take Photo)'}
-                </span>
-                <span className="text-[10px] text-blue-200">ถ่ายรูปตู้ไฟ/จุดที่มีปัญหา</span>
-              </button>
-              <input
-                type="file"
-                ref={fieldPhotoInputRef}
-                onChange={handlePhotoUpload}
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-              />
-            </div>
-          </div>
-
-          {/* Existing Evidence Photos */}
-          {job.evidencePhotos && job.evidencePhotos.length > 0 && (
-            <div className="pt-2 border-t border-slate-100">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-bold text-slate-700">
-                  📷 รูปถ่ายหลักฐานหน้างาน ({job.evidencePhotos.length} รูป)
-                </span>
-              </div>
-              <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                {job.evidencePhotos.map((p, idx) => (
-                  <img
-                    key={p.id || idx}
-                    src={p.photoUrl}
-                    alt={p.caption || 'Evidence'}
-                    className="w-16 h-16 object-cover rounded-lg border border-slate-200 shrink-0"
-                  />
+          {shareFeedback && <p role="status" className="rounded-lg bg-emerald-50 p-2.5 text-xs font-semibold text-emerald-800">{shareFeedback}</p>}
+          {!!job.evidencePhotos?.length && (
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-slate-600">
+                {isTh ? `รูปหน้างาน ${job.evidencePhotos.length} รูป` : `Site photos: ${job.evidencePhotos.length}`}
+              </p>
+              <div className="flex gap-2 overflow-x-auto">
+                {job.evidencePhotos.map((photo, index) => (
+                  <img key={photo.id || index} src={photo.photoUrl}
+                    alt={photo.caption || (isTh ? 'รูปหน้างาน' : 'Site photo')}
+                    className="h-16 w-16 shrink-0 rounded-lg border border-slate-200 object-cover" />
                 ))}
               </div>
             </div>
           )}
 
-          {/* Secondary Action: View Existing Info Collapsible */}
-          <div className="pt-2 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setShowExistingInfo(!showExistingInfo)}
-              className="w-full flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 transition-colors cursor-pointer"
-            >
-              <div className="flex items-center gap-1.5">
-                <Info className="w-3.5 h-3.5 text-slate-500" />
-                <span>{isTh ? 'ดูข้อมูลงานเดิม (View Existing Info)' : 'View Existing Info'}</span>
-              </div>
-              {showExistingInfo ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
-
-            {showExistingInfo && (
-              <div className="mt-2 p-3.5 bg-slate-50/70 rounded-xl border border-slate-200 space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">ที่ตั้ง / โลเคชั่น:</span>
-                  <span className="font-semibold text-slate-800 text-right">{job.propertyLocation || 'Phuket'}</span>
-                </div>
-                {job.quotation && (
-                  <div className="flex justify-between items-center pt-1.5 border-t border-slate-200">
-                    <span className="text-slate-500">ใบเสนอราคาเดิม:</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-slate-700">{job.quotation.refNo}</span>
-                      <button
-                        type="button"
-                        onClick={() => onOpenQuotation?.(job.id, 'preview')}
-                        className="text-[11px] text-blue-600 hover:underline font-bold cursor-pointer"
-                      >
-                        เปิดดูเอกสาร
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {job.siteNotes && (
-                  <div className="pt-1.5 border-t border-slate-200">
-                    <span className="text-slate-500 block mb-0.5">หมายเหตุหน้างานเดิม:</span>
-                    <p className="text-slate-700 leading-relaxed">{job.siteNotes}</p>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Compact Add Finding Modal */}
-        {isAddFindingOpen && (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3">
-            <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-5 shadow-2xl border border-slate-200 space-y-3 animate-in fade-in zoom-in-95 duration-150">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                <div className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
-                  <Plus className="w-4 h-4 text-emerald-600" />
-                  <span>{isTh ? 'เพิ่มข้อเท็จจริงหน้างาน' : 'Add Field Finding'}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsAddFindingOpen(false)}
-                  className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase text-slate-500">หมวดหมู่ข้อเท็จจริง:</label>
-                <div className="flex gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setNewFindingCategory('finding')}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-colors cursor-pointer ${
-                      newFindingCategory === 'finding'
-                        ? 'bg-emerald-600 text-white border-emerald-600'
-                        : 'bg-slate-50 text-slate-700 border-slate-200'
-                    }`}
-                  >
-                    ข้อเท็จจริงยืนยันได้
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNewFindingCategory('observed')}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-colors cursor-pointer ${
-                      newFindingCategory === 'observed'
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-slate-50 text-slate-700 border-slate-200'
-                    }`}
-                  >
-                    สิ่งที่พบเห็นจริง
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNewFindingCategory('test')}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-colors cursor-pointer ${
-                      newFindingCategory === 'test'
-                        ? 'bg-amber-600 text-white border-amber-600'
-                        : 'bg-slate-50 text-slate-700 border-slate-200'
-                    }`}
-                  >
-                    ผลการทดสอบ
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-black uppercase text-slate-500 block mb-1">
-                  รายละเอียดข้อเท็จจริง:
-                </label>
-                <textarea
-                  rows={3}
-                  value={newFindingText}
-                  onChange={(e) => setNewFindingText(e.target.value)}
-                  placeholder="ระบุสิ่งที่ตรวจพบจริง เช่น วัดแรงดันได้ 228V, มีไฟมาที่ขั้วหลอด, ไส้หลอดขาด..."
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  autoFocus
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsAddFindingOpen(false)}
-                  className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="button"
-                  onClick={handleAddFindingSubmit}
-                  disabled={!newFindingText.trim()}
-                  className="px-4 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg disabled:opacity-50 cursor-pointer"
-                >
-                  บันทึกข้อเท็จจริง
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+          <button type="button" onClick={() => setFieldScreenMode('full')}
+            className="w-full border-t border-slate-100 pt-4 text-left text-sm font-semibold text-blue-700 flex items-center justify-between">
+            <span>{isTh ? 'ดูรายละเอียดงานและขั้นตอนถัดไป' : 'Job details and next steps'}</span>
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </section>
       </div>
     );
   }
