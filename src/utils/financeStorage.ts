@@ -25,6 +25,9 @@ export function recordMaterialAdvance(
   if (params.slips?.some((slip) => !Number.isFinite(slip.amount) || slip.amount <= 0)) throw new Error('Invalid slip amount.');
   const refs = new Set<string>();
   for (const slip of params.slips || []) {
+    if (slip.imageDataUrl && payments.some((p) => p.slips?.some((saved) => saved.imageDataUrl === slip.imageDataUrl))) {
+      throw new Error('This transfer slip image was already recorded.');
+    }
     const ref = slip.reference?.trim().toLowerCase();
     if (ref && (refs.has(ref) || payments.some((p) => p.slips?.some((saved) => saved.reference?.trim().toLowerCase() === ref)))) {
       throw new Error(`Transfer reference ${slip.reference} has already been recorded.`);
@@ -119,13 +122,10 @@ export async function loadInvoices(): Promise<Invoice[]> {
 }
 
 export async function saveInvoices(invoices: Invoice[]): Promise<void> {
-  if (!Array.isArray(invoices)) return;
-  try {
-    await idbSet(INVOICES_KEY, invoices);
-    safeSetLocalStorage(INVOICES_KEY, JSON.stringify(invoices));
-  } catch (err) {
-    console.warn('[financeStorage] Error saving invoices:', err);
-  }
+  if (!Array.isArray(invoices)) throw new Error('Invalid invoice data.');
+  const storedInIdb = await idbSet(INVOICES_KEY, invoices);
+  const storedLocally = safeSetLocalStorage(INVOICES_KEY, JSON.stringify(invoices));
+  if (!storedInIdb && !storedLocally) throw new Error('Could not save invoices on this device.');
 }
 
 /**
@@ -154,13 +154,10 @@ export async function loadPayments(): Promise<Payment[]> {
 }
 
 export async function savePayments(payments: Payment[]): Promise<void> {
-  if (!Array.isArray(payments)) return;
-  try {
-    await idbSet(PAYMENTS_KEY, payments);
-    safeSetLocalStorage(PAYMENTS_KEY, JSON.stringify(payments));
-  } catch (err) {
-    console.warn('[financeStorage] Error saving payments:', err);
-  }
+  if (!Array.isArray(payments)) throw new Error('Invalid payment data.');
+  const storedInIdb = await idbSet(PAYMENTS_KEY, payments);
+  const storedLocally = safeSetLocalStorage(PAYMENTS_KEY, JSON.stringify(payments));
+  if (!storedInIdb && !storedLocally) throw new Error('Could not save payments on this device.');
 }
 
 /**
@@ -331,6 +328,9 @@ export function recordPayment(
   }
   const newSlipReferences = new Set<string>();
   for (const slip of params.slips || []) {
+    if (slip.imageDataUrl && payments.some((payment) => payment.slips?.some((saved) => saved.imageDataUrl === slip.imageDataUrl))) {
+      throw new Error('This transfer slip image was already recorded.');
+    }
     const ref = slip.reference?.trim().toLowerCase();
     if (ref && newSlipReferences.has(ref)) throw new Error(`Duplicate transfer reference: ${slip.reference}`);
     if (ref) newSlipReferences.add(ref);
