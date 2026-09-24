@@ -28,6 +28,7 @@ import {
 } from '../types';
 import { PaymentReceiptModal } from './PaymentReceiptModal';
 import { MollyPaymentEvidenceModal } from './MollyPaymentEvidenceModal';
+import { useLanguage } from '../i18n/translations';
 
 interface MoneyViewProps {
   invoices: Invoice[];
@@ -65,6 +66,13 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
   onApplyAdvance,
   onRecordMollyTransfer,
 }) => {
+  const { lang } = useLanguage();
+  const isTh = lang === 'th';
+  const invoiceStatusLabel = (status: Invoice['status']) => isTh ? ({
+    Draft: 'แบบร่าง', Sent: 'ส่งแล้ว', 'Partially Paid': 'ชำระบางส่วน',
+    'Deposit Received': 'รับมัดจำแล้ว', 'Materials Paid': 'ชำระค่าวัสดุแล้ว',
+    Paid: 'ชำระครบ', Overdue: 'เกินกำหนด', Cancelled: 'ยกเลิก',
+  } as Record<Invoice['status'], string>)[status] : status;
   const [rangeFilter, setRangeFilter] = useState<DateRangeFilter>('all');
   const [activeTab, setActiveTab] = useState<MoneyTab>('invoices');
   const [searchTerm, setSearchTerm] = useState('');
@@ -189,15 +197,15 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-black uppercase tracking-wider text-emerald-400">
-              SOLO OPERATOR CASH FLOW
+              {isTh ? 'ภาพรวมการเงิน' : 'SOLO OPERATOR CASH FLOW'}
             </span>
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
-            Money &amp; Profit Center
+            {isTh ? 'การเงินและกำไร' : 'Money & Profit Center'}
           </h1>
           <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-xl">
-            Track customer invoices, material &amp; fuel costs, net profits, and uncollected balances in real-time.
+            {isTh ? 'ติดตามใบแจ้งหนี้ เงินที่รับแล้ว ค่าใช้จ่าย และยอดค้างรับ' : 'Track customer invoices, material & fuel costs, net profits, and uncollected balances in real-time.'}
           </p>
         </div>
 
@@ -205,14 +213,14 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           <button type="button" onClick={() => setMollyEvidenceOpen(true)}
             className="flex-1 md:flex-none bg-white text-blue-900 font-black text-xs sm:text-sm px-3.5 py-2 rounded-xl">
-            Molly · อ่าน Invoice / สลิป
+            {isTh ? 'Molly · อ่านใบแจ้งหนี้ / สลิป' : 'Molly · Read invoice / slips'}
           </button>
           <button
             onClick={() => onOpenRecordPayment()}
             className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm px-3.5 py-2 rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer"
           >
             <CreditCard className="w-4 h-4" />
-            <span>+ RECORD PAYMENT</span>
+            <span>{isTh ? 'บันทึกรับเงิน' : 'Record Payment'}</span>
           </button>
 
           <button
@@ -220,7 +228,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
             className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs sm:text-sm px-3.5 py-2 rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer"
           >
             <Receipt className="w-4 h-4" />
-            <span>+ ADD EXPENSE</span>
+            <span>{isTh ? 'เพิ่มค่าใช้จ่าย' : 'Add Expense'}</span>
           </button>
 
           <button
@@ -228,7 +236,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
             className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-black text-xs sm:text-sm px-3.5 py-2 rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer"
           >
             <FileText className="w-4 h-4" />
-            <span>+ NEW INVOICE</span>
+            <span>{isTh ? 'สร้างใบแจ้งหนี้' : 'New Invoice'}</span>
           </button>
         </div>
       </div>
@@ -238,7 +246,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
         <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none w-full sm:w-auto">
           <span className="text-xs font-bold text-slate-500 mr-1 flex items-center gap-1">
             <Filter className="w-3.5 h-3.5" />
-            <span>Period:</span>
+            <span>{isTh ? 'ช่วงเวลา:' : 'Period:'}</span>
           </span>
           {(['all', 'this_month', 'last_month', 'this_year'] as DateRangeFilter[]).map(
             (rf) => (
@@ -251,13 +259,9 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                {rf === 'all'
-                  ? 'All Time'
-                  : rf === 'this_month'
-                  ? 'This Month'
-                  : rf === 'last_month'
-                  ? 'Last Month'
-                  : 'This Year'}
+                {isTh
+                  ? ({ all: 'ทั้งหมด', this_month: 'เดือนนี้', last_month: 'เดือนก่อน', this_year: 'ปีนี้' } as Record<DateRangeFilter, string>)[rf]
+                  : ({ all: 'All Time', this_month: 'This Month', last_month: 'Last Month', this_year: 'This Year' } as Record<DateRangeFilter, string>)[rf]}
               </button>
             )
           )}
@@ -267,7 +271,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           <input
             type="text"
-            placeholder="Search invoice, customer, item..."
+            placeholder={isTh ? 'ค้นหาใบแจ้งหนี้ ลูกค้า หรือรายการ...' : 'Search invoice, customer, item...'}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -281,7 +285,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">
-              REVENUE COLLECTED
+              {isTh ? 'เงินที่รับแล้ว' : 'REVENUE COLLECTED'}
             </span>
             <span className="p-1.5 bg-emerald-100 text-emerald-800 rounded-lg">
               <DollarSign className="w-4 h-4 text-emerald-700" />
@@ -293,7 +297,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
             </div>
             <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
               <ArrowUpRight className="w-3.5 h-3.5 text-emerald-600" />
-              <span>{filteredPayments.length} recorded payments</span>
+              <span>{filteredPayments.length} {isTh ? 'รายการรับเงิน' : 'recorded payments'}</span>
             </div>
           </div>
         </div>
@@ -302,7 +306,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">
-              TOTAL EXPENSES
+              {isTh ? 'ค่าใช้จ่ายทั้งหมด' : 'TOTAL EXPENSES'}
             </span>
             <span className="p-1.5 bg-rose-100 text-rose-800 rounded-lg">
               <Receipt className="w-4 h-4 text-rose-700" />
@@ -314,7 +318,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
             </div>
             <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
               <ArrowDownRight className="w-3.5 h-3.5 text-rose-500" />
-              <span>{filteredExpenses.length} expense vouchers</span>
+              <span>{filteredExpenses.length} {isTh ? 'รายการค่าใช้จ่าย' : 'expense vouchers'}</span>
             </div>
           </div>
         </div>
@@ -323,7 +327,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">
-              NET PROFIT
+              {isTh ? 'กำไรสุทธิ' : 'NET PROFIT'}
             </span>
             <span className="p-1.5 bg-blue-100 text-blue-800 rounded-lg">
               <TrendingUp className="w-4 h-4 text-blue-700" />
@@ -338,7 +342,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
               ฿{netProfit.toLocaleString()}
             </div>
             <div className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
-              <span className="font-bold text-slate-700">Margin:</span>
+              <span className="font-bold text-slate-700">{isTh ? 'อัตรากำไร:' : 'Margin:'}</span>
               <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-black text-[10px]">
                 {overallMargin}%
               </span>
@@ -350,7 +354,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">
-              TO COLLECT (UNPAID)
+              {isTh ? 'ยอดค้างรับ' : 'TO COLLECT (UNPAID)'}
             </span>
             <span className="p-1.5 bg-amber-100 text-amber-800 rounded-lg">
               <Clock className="w-4 h-4 text-amber-700" />
@@ -363,10 +367,10 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
             <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
               {overdueInvoices.length > 0 ? (
                 <span className="text-rose-600 font-bold">
-                  {overdueInvoices.length} invoices overdue!
+                  {overdueInvoices.length} {isTh ? 'ใบแจ้งหนี้เกินกำหนด' : 'invoices overdue!'}
                 </span>
               ) : (
-                <span>Across {outstandingInvoices.length} pending invoices</span>
+                <span>{isTh ? `จากใบแจ้งหนี้ค้างชำระ ${outstandingInvoices.length} ฉบับ` : `Across ${outstandingInvoices.length} pending invoices`}</span>
               )}
             </div>
           </div>
@@ -385,7 +389,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
             }`}
           >
             <FileText className="w-3.5 h-3.5" />
-            <span>Invoices ({filteredInvoices.length})</span>
+            <span>{isTh ? 'ใบแจ้งหนี้' : 'Invoices'} ({filteredInvoices.length})</span>
           </button>
 
           <button
@@ -397,7 +401,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
             }`}
           >
             <CreditCard className="w-3.5 h-3.5" />
-            <span>Payments ({filteredPayments.length})</span>
+            <span>{isTh ? 'รับเงิน' : 'Payments'} ({filteredPayments.length})</span>
           </button>
 
           <button
@@ -409,7 +413,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
             }`}
           >
             <Receipt className="w-3.5 h-3.5" />
-            <span>Expenses ({filteredExpenses.length})</span>
+            <span>{isTh ? 'ค่าใช้จ่าย' : 'Expenses'} ({filteredExpenses.length})</span>
           </button>
 
           <button
@@ -421,7 +425,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
             }`}
           >
             <AlertCircle className="w-3.5 h-3.5" />
-            <span>Follow-up &amp; Overdue ({outstandingInvoices.length})</span>
+            <span>{isTh ? 'ติดตามยอดค้าง' : 'Follow-up & Overdue'} ({outstandingInvoices.length})</span>
           </button>
         </div>
 
@@ -431,21 +435,21 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-[10px] font-black uppercase text-slate-500">
-                  <th className="py-3 px-4">Invoice #</th>
-                  <th className="py-3 px-4">Customer &amp; Villa</th>
-                  <th className="py-3 px-4">Issue / Due</th>
-                  <th className="py-3 px-4 text-right">Total</th>
-                  <th className="py-3 px-4 text-right">Paid</th>
-                  <th className="py-3 px-4 text-right">Balance Due</th>
-                  <th className="py-3 px-4 text-center">Status</th>
-                  <th className="py-3 px-4 text-center">Action</th>
+                  <th className="py-3 px-4">{isTh ? 'เลขที่ใบแจ้งหนี้' : 'Invoice #'}</th>
+                  <th className="py-3 px-4">{isTh ? 'ลูกค้า / วิลล่า' : 'Customer & Villa'}</th>
+                  <th className="py-3 px-4">{isTh ? 'ออก / ครบกำหนด' : 'Issue / Due'}</th>
+                  <th className="py-3 px-4 text-right">{isTh ? 'ยอดรวม' : 'Total'}</th>
+                  <th className="py-3 px-4 text-right">{isTh ? 'ชำระแล้ว' : 'Paid'}</th>
+                  <th className="py-3 px-4 text-right">{isTh ? 'ค้างชำระ' : 'Balance Due'}</th>
+                  <th className="py-3 px-4 text-center">{isTh ? 'สถานะ' : 'Status'}</th>
+                  <th className="py-3 px-4 text-center">{isTh ? 'การดำเนินการ' : 'Action'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredInvoices.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-8 text-center text-slate-400">
-                      No invoices found matching criteria.
+                      {isTh ? 'ไม่พบใบแจ้งหนี้ตามเงื่อนไข' : 'No invoices found matching criteria.'}
                     </td>
                   </tr>
                 ) : (
@@ -459,15 +463,15 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
                         </td>
                         <td className="py-3 px-4">
                           <div className="font-bold text-slate-900">
-                            {customer?.name || customer?.fullName || 'Customer'}
+                            {customer?.name || customer?.fullName || (isTh ? 'ลูกค้า' : 'Customer')}
                           </div>
                           <div className="text-[11px] text-slate-500">
-                            {job?.villaName || 'Villa'}
+                            {job?.villaName || (isTh ? 'วิลล่า' : 'Villa')}
                           </div>
                         </td>
                         <td className="py-3 px-4 text-[11px] text-slate-600">
-                          <div>Issued: {inv.issueDate}</div>
-                          <div className="text-slate-400">Due: {inv.dueDate}</div>
+                          <div>{isTh ? 'ออก: ' : 'Issued: '}{inv.issueDate}</div>
+                          <div className="text-slate-400">{isTh ? 'ครบกำหนด: ' : 'Due: '}{inv.dueDate}</div>
                         </td>
                         <td className="py-3 px-4 text-right font-mono font-black text-slate-900">
                           ฿{inv.total.toLocaleString()}
@@ -486,7 +490,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
                               inv.status
                             )}`}
                           >
-                            {inv.status}
+                            {invoiceStatusLabel(inv.status)}
                           </span>
                         </td>
                         <td className="py-3 px-4 text-center">
@@ -497,7 +501,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
                                 className="px-2 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-[11px] font-bold cursor-pointer"
                                 title="Record Payment"
                               >
-                                + Pay
+                                {isTh ? '+ รับเงิน' : '+ Pay'}
                               </button>
                             )}
                             <button
@@ -505,7 +509,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
                               className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold cursor-pointer"
                               title="View Invoice"
                             >
-                              View
+                              {isTh ? 'ดู' : 'View'}
                             </button>
                           </div>
                         </td>
@@ -524,20 +528,20 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-[10px] font-black uppercase text-slate-500">
-                  <th className="py-3 px-4">Date</th>
-                  <th className="py-3 px-4">Customer</th>
-                  <th className="py-3 px-4">Method</th>
-                  <th className="py-3 px-4">Reference / Notes</th>
-                  <th className="py-3 px-4 text-right">Amount</th>
-                  <th className="py-3 px-4 text-center">Invoice</th>
-                  <th className="py-3 px-4 text-center">Receipt</th>
+                  <th className="py-3 px-4">{isTh ? 'วันที่' : 'Date'}</th>
+                  <th className="py-3 px-4">{isTh ? 'ลูกค้า' : 'Customer'}</th>
+                  <th className="py-3 px-4">{isTh ? 'วิธีชำระ' : 'Method'}</th>
+                  <th className="py-3 px-4">{isTh ? 'เลขอ้างอิง / หมายเหตุ' : 'Reference / Notes'}</th>
+                  <th className="py-3 px-4 text-right">{isTh ? 'จำนวนเงิน' : 'Amount'}</th>
+                  <th className="py-3 px-4 text-center">{isTh ? 'ใบแจ้งหนี้' : 'Invoice'}</th>
+                  <th className="py-3 px-4 text-center">{isTh ? 'ใบเสร็จ' : 'Receipt'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredPayments.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-8 text-center text-slate-400">
-                      No payments logged in this period.
+                      {isTh ? 'ยังไม่มีรายการรับเงินในช่วงนี้' : 'No payments logged in this period.'}
                     </td>
                   </tr>
                 ) : (
@@ -570,7 +574,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
                           {p.purpose === 'material_advance' && !p.appliedInvoiceId ? (
                             <select defaultValue="" aria-label="Credit advance to final invoice" className="max-w-40 p-1 border rounded"
                               onChange={async (e) => { if (!e.target.value) return; try { await onApplyAdvance(p.id, e.target.value); } catch (error) { alert(error instanceof Error ? error.message : 'Could not apply advance.'); e.target.value = ''; } }}>
-                              <option value="">Apply to final invoice</option>
+                              <option value="">{isTh ? 'หักจากใบแจ้งหนี้สุดท้าย' : 'Apply to final invoice'}</option>
                               {invoices.filter((candidate) => candidate.jobId === p.jobId && candidate.customerId === p.customerId && candidate.balanceDue >= p.amount)
                                 .map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.invoiceNumber}</option>)}
                             </select>
@@ -587,7 +591,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
                         </td>
                         <td className="py-3 px-4 text-center">
                           <button type="button" onClick={() => setReceiptPayment(p)} className="px-2 py-1 rounded-lg bg-blue-50 text-blue-700 font-bold">
-                            Receipt
+                            {isTh ? 'ใบเสร็จ' : 'Receipt'}
                           </button>
                         </td>
                       </tr>
@@ -605,19 +609,19 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-[10px] font-black uppercase text-slate-500">
-                  <th className="py-3 px-4">Date</th>
-                  <th className="py-3 px-4">Category</th>
-                  <th className="py-3 px-4">Description</th>
-                  <th className="py-3 px-4">Linked Job</th>
-                  <th className="py-3 px-4">Receipt / Notes</th>
-                  <th className="py-3 px-4 text-right">Amount</th>
+                  <th className="py-3 px-4">{isTh ? 'วันที่' : 'Date'}</th>
+                  <th className="py-3 px-4">{isTh ? 'หมวดหมู่' : 'Category'}</th>
+                  <th className="py-3 px-4">{isTh ? 'รายละเอียด' : 'Description'}</th>
+                  <th className="py-3 px-4">{isTh ? 'งานที่เกี่ยวข้อง' : 'Linked Job'}</th>
+                  <th className="py-3 px-4">{isTh ? 'ใบเสร็จ / หมายเหตุ' : 'Receipt / Notes'}</th>
+                  <th className="py-3 px-4 text-right">{isTh ? 'จำนวนเงิน' : 'Amount'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredExpenses.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-8 text-center text-slate-400">
-                      No expenses logged in this period.
+                      {isTh ? 'ยังไม่มีค่าใช้จ่ายในช่วงนี้' : 'No expenses logged in this period.'}
                     </td>
                   </tr>
                 ) : (
@@ -643,7 +647,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
                               {job.villaName}
                             </button>
                           ) : (
-                            <span className="text-slate-400">General</span>
+                            <span className="text-slate-400">{isTh ? 'ทั่วไป' : 'General'}</span>
                           )}
                         </td>
                         <td className="py-3 px-4 text-slate-500 text-[11px]">
@@ -667,20 +671,20 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div>
                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-                  Uncollected Balances Requiring Action
+                  {isTh ? 'ยอดค้างรับที่ต้องติดตาม' : 'Uncollected Balances Requiring Action'}
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Follow up with clients to collect deposits and final invoices
+                  {isTh ? 'ติดตามเงินมัดจำและใบแจ้งหนี้ที่ยังไม่ชำระ' : 'Follow up with clients to collect deposits and final invoices'}
                 </p>
               </div>
               <span className="text-xs font-black text-rose-700 bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200">
-                ฿{totalToCollect.toLocaleString()} Pending
+                ฿{totalToCollect.toLocaleString()} {isTh ? 'ค้างรับ' : 'Pending'}
               </span>
             </div>
 
             {outstandingInvoices.length === 0 ? (
               <div className="p-8 text-center text-slate-400 text-xs">
-                All invoices have been paid in full! Great work.
+                {isTh ? 'ไม่มีใบแจ้งหนี้ค้างชำระ' : 'All invoices have been paid in full! Great work.'}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -710,7 +714,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
                               isOverdue ? 'Overdue' : inv.status
                             )}`}
                           >
-                            {isOverdue ? 'Overdue' : inv.status}
+                            {invoiceStatusLabel(isOverdue ? 'Overdue' : inv.status)}
                           </span>
                         </div>
 
@@ -718,7 +722,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
                           {customer?.name || customer?.fullName || 'Customer'}
                         </div>
                         <div className="text-xs text-slate-600 mt-0.5">
-                          {job?.villaName || 'Villa'} • Due: <strong>{inv.dueDate}</strong>
+                          {job?.villaName || (isTh ? 'วิลล่า' : 'Villa')} • {isTh ? 'ครบกำหนด: ' : 'Due: '}<strong>{inv.dueDate}</strong>
                         </div>
                         {customer?.phone && (
                           <div className="text-[11px] text-slate-500 mt-1">
@@ -729,7 +733,7 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
 
                       <div className="mt-3 pt-3 border-t border-slate-200/80 flex items-center justify-between">
                         <div>
-                          <span className="text-[10px] text-slate-500 block">Balance Due:</span>
+                          <span className="text-[10px] text-slate-500 block">{isTh ? 'ยอดค้างชำระ:' : 'Balance Due:'}</span>
                           <span className="font-mono font-black text-rose-700 text-base">
                             ฿{inv.balanceDue.toLocaleString()}
                           </span>

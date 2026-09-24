@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   CalendarDays,
   Users,
@@ -45,18 +46,14 @@ export const Navigation: React.FC<NavigationProps> = ({
   const { logoUrl, fallbackLogoUrl } = useCustomLogo();
   const { lang, setLanguage, t } = useLanguage();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
-  const moreRef = useRef<HTMLDivElement>(null);
-
-  // Close more menu when clicking outside
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (moreRef.current && !moreRef.current.contains(event.target as Node)) {
-        setIsMoreOpen(false);
-      }
+    if (!isMoreOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsMoreOpen(false);
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [isMoreOpen]);
 
   const primaryMobileTabs: {
     id: MainNavTab;
@@ -231,9 +228,11 @@ export const Navigation: React.FC<NavigationProps> = ({
           })}
 
           {/* More Menu Dropdown for Mobile */}
-          <div className="relative shrink-0" ref={moreRef}>
+          <div className="relative shrink-0">
             <button
               onClick={() => setIsMoreOpen(!isMoreOpen)}
+              aria-expanded={isMoreOpen}
+              aria-controls="mobile-more-menu"
               className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
                 isMoreActive || isMoreOpen
                   ? 'bg-slate-700 text-white shadow-xs'
@@ -245,8 +244,15 @@ export const Navigation: React.FC<NavigationProps> = ({
               <ChevronDown className="w-3 h-3 opacity-60" />
             </button>
 
-            {isMoreOpen && (
-              <div className="absolute right-0 top-full mt-1 w-44 bg-slate-900 border border-slate-700 rounded-xl shadow-xl py-1 z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+            {isMoreOpen && createPortal(
+              <div className="fixed inset-0 z-[100] flex items-end bg-slate-950/55 md:hidden" onClick={() => setIsMoreOpen(false)}>
+                <div id="mobile-more-menu" role="menu" aria-label={lang === 'th' ? 'เมนูเพิ่มเติม' : 'More menu'}
+                  className="w-full max-h-[75dvh] overflow-y-auto rounded-t-2xl bg-slate-900 p-3 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl"
+                  onClick={(event) => event.stopPropagation()}>
+                <div className="flex items-center justify-between px-2 pb-2 text-sm font-bold text-white">
+                  <span>{lang === 'th' ? 'เพิ่มเติม' : 'More'}</span>
+                  <button type="button" onClick={() => setIsMoreOpen(false)} className="rounded-lg px-3 py-2 text-slate-300" aria-label={lang === 'th' ? 'ปิดเมนู' : 'Close menu'}>✕</button>
+                </div>
                 {secondaryTabs.map((item) => {
                   const Icon = item.icon;
                   const isActive = activeTab === item.id;
@@ -257,7 +263,8 @@ export const Navigation: React.FC<NavigationProps> = ({
                         onSelectTab(item.id);
                         setIsMoreOpen(false);
                       }}
-                      className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-left transition-colors cursor-pointer ${
+                      role="menuitem"
+                      className={`w-full flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-bold text-left transition-colors cursor-pointer ${
                         isActive
                           ? 'bg-blue-600 text-white'
                           : 'text-slate-300 hover:bg-slate-800 hover:text-white'
@@ -279,11 +286,12 @@ export const Navigation: React.FC<NavigationProps> = ({
                       className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-amber-300 hover:bg-slate-800 text-left cursor-pointer"
                     >
                       <Sparkles className="w-4 h-4 text-amber-400" />
-                      <span>Molly Express Quote</span>
+                      <span>{lang === 'th' ? 'Molly · ออกใบเสนอราคาด่วน' : 'Molly Express Quote'}</span>
                     </button>
                   </div>
                 )}
-              </div>
+                </div>
+              </div>, document.body
             )}
           </div>
         </div>

@@ -31,25 +31,40 @@ export const MollyPaymentEvidenceModal: React.FC<Props> = ({invoices, jobs, paym
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState<number | null>(null);
   const [error, setError] = useState('');
+  const [stage, setStage] = useState<'files' | 'request' | ''>('');
+
+  const addManualTransfer = (fileIndex: number) => {
+    setTransfers((prev) => [...prev, {fileIndex, amount: 0, reference: '', date: new Date().toISOString().slice(0, 10),
+      purpose: 'unmatched', invoiceId: '', jobId: '', reason: 'กรอกตามสลิปและตรวจสอบรายการด้วยตัวเอง', confidence: 'รอตรวจสอบ', target: ''}]);
+    setError('');
+  };
 
   const analyze = async () => {
     if (!files.length) {setError('Attach an invoice and/or transfer slips first.'); return;}
-    setError(''); setBusy(true); setTransfers([]);
+    setError(''); setBusy(true); setStage('files'); setTransfers([]);
     try {
       const attachments = await Promise.all(files.map((file) => new Promise<{mimeType: string; data: string}>((resolve, reject) => {
         const reader = new FileReader();
         reader.onerror = () => reject(new Error('Could not read ' + file.name));
-        reader.onload = () => resolve({mimeType: file.type, data: String(reader.result).split(',')[1]});
-        reader.readAsDataURL(file);
+        reader.onload = () => {
+          const result = typeof reader.result === 'string' ? reader.result : '';
+          const data = result.startsWith('data:') ? result.slice(result.indexOf(',') + 1) : '';
+          if (!data || !result.includes(',')) reject(new Error('Could not read ' + file.name));
+          else resolve({mimeType: file.type, data});
+        };
+        try { reader.readAsDataURL(file); } catch { reject(new Error('Could not read ' + file.name)); }
       })));
+      setStage('request');
       const response = await fetch('/api/gemini/molly-payment-evidence', {method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({files: attachments, message,
           invoices: invoices.map((i) => ({id: i.id, invoiceNumber: i.invoiceNumber, jobId: i.jobId, customerId: i.customerId,
             balanceDue: i.balanceDue, items: i.items.map((line) => ({description: line.description, amount: line.amount}))})),
           jobs: jobs.map((j) => ({id: j.id, customerId: j.customerId || j.clientId, villaName: j.villaName,
             serviceType: j.serviceType, materialDepositRequested: j.materialDepositRequested}))})});
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Molly could not read these documents.');
+      const raw = await response.text();
+      let result: {error?: string; transfers?: Transfer[]};
+      try { result = JSON.parse(raw); } catch { throw new Error(`เซิร์ฟเวอร์ส่งผลตอบกลับที่อ่านไม่ได้ (${response.status}) กรุณาลองใหม่ หรือกรอกยอดจากสลิปเอง`); }
+      if (!response.ok) throw new Error(result.error || `ไม่สามารถวิเคราะห์เอกสารได้ (${response.status})`);
       const suggestions: Transfer[] = (result.transfers || []).map((t: Transfer) => ({...t,
         target: t.purpose === 'invoice' && invoices.some((i) => i.id === t.invoiceId && i.balanceDue >= t.amount) ? `invoice:${t.invoiceId}` :
           t.purpose === 'material_advance' && jobs.some((j) => j.id === t.jobId) ? `advance:${t.jobId}` : '',
@@ -57,13 +72,24 @@ export const MollyPaymentEvidenceModal: React.FC<Props> = ({invoices, jobs, paym
       }));
       setTransfers(suggestions);
       if (!suggestions.length) setError('No transfer was identified. Check the attachments and try again.');
-    } catch (err) {setError(err instanceof Error ? err.message : 'Could not analyze documents.');}
-    finally {setBusy(false);}
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : '';
+      setError(detail.startsWith('Could not read ') ? `${detail} กรุณาเลือกไฟล์ใหม่ หรือกรอกยอดจากสลิปเอง` :
+        detail === 'The string did not match the expected pattern.' || err instanceof TypeError ?
+          'ส่งไฟล์ไปให้ Molly ไม่สำเร็จ กรุณาลองใหม่ หรือตรวจสลิปและกรอกยอดด้วยตัวเอง' :
+          detail || 'วิเคราะห์เอกสารไม่สำเร็จ กรุณาลองใหม่หรือกรอกยอดจากสลิปเอง');
+    } finally {setBusy(false); setStage('');}
   };
 
   const save = async (index: number) => {
     const transfer = transfers[index];
-    if (!transfer?.target || !transfer.amount || transfer.amount <= 0) {setError('Check the amount and choose the correct invoice or new job.'); return;}
+    if (!transfer?.target || !Number.isFinite(transfer.amount) || transfer.amount <= 0 || !files[transfer.fileIndex]) {
+      setError('ตรวจสอบยอด เลือกสลิป และเลือกใบแจ้งหนี้หรืองานใหม่ให้ถูกต้อง'); return;
+    }
+    const [kind, id] = transfer.target.split(':');
+    if (kind === 'invoice' && !invoices.some((invoice) => invoice.id === id && invoice.balanceDue >= transfer.amount)) {
+      setError('ยอดสูงกว่ายอดค้างชำระของใบแจ้งหนี้ กรุณาตรวจสอบการแยกยอด'); return;
+    }
     if (transfer.reference && payments.some((p) => p.reference?.trim().toLowerCase() === transfer.reference.trim().toLowerCase() ||
       p.slips?.some((s) => s.reference?.trim().toLowerCase() === transfer.reference.trim().toLowerCase()))) {
       setError('This transfer reference was already recorded.'); return;
@@ -72,7 +98,7 @@ export const MollyPaymentEvidenceModal: React.FC<Props> = ({invoices, jobs, paym
     try {
       const payment = await onRecord(transfer, files[transfer.fileIndex]);
       setTransfers((prev) => prev.map((t, i) => i === index ? {...t, saved: payment} : t));
-    } catch (err) {setError(err instanceof Error ? err.message : 'Could not save this payment.');}
+    } catch (err) {setError(err instanceof Error && err.message !== 'The string did not match the expected pattern.' ? err.message : 'บันทึกไม่สำเร็จ กรุณาตรวจสอบไฟล์และลองใหม่');}
     finally {setSaving(null);}
   };
 
@@ -97,8 +123,14 @@ export const MollyPaymentEvidenceModal: React.FC<Props> = ({invoices, jobs, paym
           className="block w-full mt-1 p-2 border rounded-lg text-sm" />
       </label>
       <button type="button" disabled={busy || !files.length} onClick={analyze} className="p-2.5 rounded-lg bg-blue-700 text-white font-bold disabled:opacity-50">
-        {busy ? 'กำลังอ่านเอกสาร…' : 'ให้ Molly วิเคราะห์'}</button>
+        {busy ? stage === 'files' ? 'กำลังอ่านไฟล์…' : 'กำลังส่งให้ Molly วิเคราะห์…' : 'ให้ Molly วิเคราะห์'}</button>
       {error && <p role="alert" className="text-sm text-rose-700 font-semibold">{error}</p>}
+      <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-700 space-y-2">
+        <p>หาก Molly อ่านไม่ได้ คุณยังบันทึกสลิปแต่ละใบได้: เลือกไฟล์สลิป → กรอกยอด/วันที่/เลขอ้างอิง → เลือกใบแจ้งหนี้เดิมหรือมัดจำงานใหม่ → ตรวจสอบกับธนาคารก่อนกดบันทึก</p>
+        <div className="flex flex-wrap gap-2">{files.map((file, index) => <button key={`${file.name}-${index}`} type="button"
+          disabled={busy} onClick={() => addManualTransfer(index)} className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 disabled:opacity-50">
+          + กรอกสลิปเอง: {file.name}</button>)}</div>
+      </div>
       {transfers.map((t, index) => <div key={`${t.fileIndex}-${index}`} className="p-3 border rounded-xl space-y-2">
         <p className="text-sm font-bold">{files[t.fileIndex]?.name} · ข้อเสนอ Molly: {t.purpose === 'invoice' ? 'ชำระ invoice' : t.purpose === 'material_advance' ? 'มัดจำงานต่อเนื่อง' : 'ยังไม่แน่ใจ'}</p>
         <p className="text-xs text-slate-600">{t.reason} · ความมั่นใจ {t.confidence}</p>

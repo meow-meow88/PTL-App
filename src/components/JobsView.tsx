@@ -156,14 +156,14 @@ export const JobsView: React.FC<JobsViewProps> = ({
               <Briefcase className="w-5 h-5" />
             </span>
             <h1 className="text-lg sm:text-xl font-black text-slate-900">
-              Jobs &amp; Dispatch
+              {isTh ? 'งานทั้งหมด' : 'Jobs & Dispatch'}
             </h1>
             <span className="text-xs font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
-              {jobs.length} jobs
+              {jobs.length} {isTh ? 'งาน' : 'jobs'}
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Solo operator task tracking, job financial profitability, invoices, and inspection records
+            {isTh ? 'ติดตามสถานะงาน นัดหมาย และผลตรวจหน้างาน' : 'Solo operator task tracking, job financial profitability, invoices, and inspection records'}
           </p>
         </div>
 
@@ -172,7 +172,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
           className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer"
         >
           <Plus className="w-4 h-4 stroke-[3]" />
-          <span>+ NEW JOB</span>
+          <span>{isTh ? 'เพิ่มงาน' : 'New Job'}</span>
         </button>
       </div>
 
@@ -182,7 +182,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search by customer, villa name, service type, or job ID..."
+            placeholder={isTh ? 'ค้นหาลูกค้า วิลล่า ประเภทงาน หรือรหัสงาน...' : 'Search by customer, villa name, service type, or job ID...'}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -191,13 +191,13 @@ export const JobsView: React.FC<JobsViewProps> = ({
 
         <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto scrollbar-none pb-1 sm:pb-0">
           {[
-            { id: 'all', label: 'All Jobs' },
-            { id: 'in_progress', label: 'In Progress' },
-            { id: 'inspection', label: 'Field Checks' },
-            { id: 'quoted', label: 'Quoted' },
-            { id: 'invoiced', label: 'Invoiced' },
-            { id: 'paid', label: 'Paid' },
-            { id: 'completed', label: 'Completed' },
+            { id: 'all', label: isTh ? 'ทั้งหมด' : 'All Jobs' },
+            { id: 'in_progress', label: isTh ? 'กำลังทำ' : 'In Progress' },
+            { id: 'inspection', label: isTh ? 'งานตรวจ' : 'Field Checks' },
+            { id: 'quoted', label: isTh ? 'เสนอราคาแล้ว' : 'Quoted' },
+            { id: 'invoiced', label: isTh ? 'แจ้งหนี้แล้ว' : 'Invoiced' },
+            { id: 'paid', label: isTh ? 'ชำระแล้ว' : 'Paid' },
+            { id: 'completed', label: isTh ? 'เสร็จแล้ว' : 'Completed' },
           ].map((f) => (
             <button
               key={f.id}
@@ -272,13 +272,13 @@ export const JobsView: React.FC<JobsViewProps> = ({
                           : 'bg-purple-100 text-purple-800 border-purple-200'
                       }`}
                     >
-                      INV: {invoiceStatus}
+                      {isTh ? 'ใบแจ้งหนี้: ' : 'INV: '}{getOwnerStatusLabel(invoiceStatus as JobStatus, isTh)}
                     </span>
                   )}
 
                   {job.isSimpleJob && (
                     <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-                      Quick Job
+                      {isTh ? 'งานด่วน' : 'Quick Job'}
                     </span>
                   )}
 
@@ -346,7 +346,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
                     </span>
                   )}
                   <span>
-                    Findings: <strong>{job.items?.length || 0}</strong>
+                    {isTh ? 'ผลตรวจ: ' : 'Findings: '}<strong>{job.items?.length || 0}</strong>
                   </span>
                 </div>
 
@@ -354,18 +354,18 @@ export const JobsView: React.FC<JobsViewProps> = ({
                 <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100">
                   {financials.customerPrice > 0 ? (
                     <div className="text-xs font-bold text-slate-800 bg-slate-100/80 px-2.5 py-1 rounded-lg">
-                      Price: <span className="font-mono font-black">฿{financials.customerPrice.toLocaleString()}</span>
+                      {isTh ? 'ราคา: ' : 'Price: '}<span className="font-mono font-black">฿{financials.customerPrice.toLocaleString()}</span>
                     </div>
                   ) : (
                     <div className="text-xs font-bold text-slate-500 bg-slate-100/80 px-2.5 py-1 rounded-lg">
-                      Price: <span className="italic">{isTh ? 'ยังไม่เสนอราคา' : 'Pending'}</span>
+                      {isTh ? 'ราคา: ' : 'Price: '}<span className="italic">{isTh ? 'ยังไม่เสนอราคา' : 'Pending'}</span>
                     </div>
                   )}
 
                   {financials.hasCostEntered ? (
                     <>
                       <div className="text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg">
-                        Cost: <span className="font-mono">฿{financials.totalCost.toLocaleString()}</span>
+                        {isTh ? 'ต้นทุน: ' : 'Cost: '}<span className="font-mono">฿{financials.totalCost.toLocaleString()}</span>
                       </div>
 
                       <div className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg">
@@ -384,7 +384,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
                     </>
                   ) : (
                     <div className="text-xs font-medium text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg">
-                      Cost: <span className="italic">{isTh ? 'ยังไม่ได้บันทึกต้นทุน' : 'Not entered'}</span>
+                      {isTh ? 'ต้นทุน: ' : 'Cost: '}<span className="italic">{isTh ? 'ยังไม่ได้บันทึกต้นทุน' : 'Not entered'}</span>
                     </div>
                   )}
                 </div>
@@ -413,7 +413,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
                     title="Schedule date, time & reminders"
                   >
                     <Clock className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Schedule</span>
+                    <span>{isTh ? 'นัดหมาย' : 'Schedule'}</span>
                   </button>
                 )}
 
@@ -424,7 +424,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
                     title="Assign or change subcontractor vendor"
                   >
                     <Wrench className="w-3.5 h-3.5" />
-                    <span>{job.vendorId ? 'Vendor' : '+ Vendor'}</span>
+                    <span>{isTh ? (job.vendorId ? 'ช่าง' : '+ ช่าง') : (job.vendorId ? 'Vendor' : '+ Vendor')}</span>
                   </button>
                 )}
 
@@ -434,7 +434,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
                   title="View complete financial breakdown"
                 >
                   <DollarSign className="w-3.5 h-3.5" />
-                  <span>Financials</span>
+                  <span>{isTh ? 'การเงิน' : 'Financials'}</span>
                 </button>
 
                 <button
@@ -493,13 +493,13 @@ export const JobsView: React.FC<JobsViewProps> = ({
 
         {filteredJobs.length === 0 && (
           <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400">
-            <p className="text-sm">No jobs found matching your criteria.</p>
+            <p className="text-sm">{isTh ? 'ไม่พบงานที่ตรงกับคำค้นหา' : 'No jobs found matching your criteria.'}</p>
             <button
               onClick={onOpenQuickJob}
               className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white font-bold text-xs rounded-xl cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>Create New Job</span>
+              <span>{isTh ? 'สร้างงานใหม่' : 'Create New Job'}</span>
             </button>
           </div>
         )}

@@ -44,6 +44,7 @@ import {
   getOwnerStatusLabel,
 } from '../types';
 import { deduplicateProperties, checkPropertyDeleteSafety, PropertySafetyReport } from '../utils/crmStorage';
+import { useLanguage } from '../i18n/translations';
 
 interface PropertiesViewProps {
   properties: Property[];
@@ -100,6 +101,9 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
   onOpenJobQuotation,
   initialSelectedPropertyId,
 }) => {
+  const { lang } = useLanguage();
+  const isTh = lang === 'th';
+  const propertyTypeLabel = (type: PropertyType) => isTh ? ({ Villa: 'วิลล่า', Condo: 'คอนโด', Estate: 'โครงการบ้าน', Commercial: 'อาคารพาณิชย์', Other: 'อื่นๆ' } as Record<PropertyType, string>)[type] : type;
   const dedupedProperties = useMemo(() => {
     return deduplicateProperties(properties);
   }, [properties]);
@@ -338,14 +342,14 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
               <Building2 className="w-5 h-5" />
             </span>
             <h1 className="text-lg sm:text-xl font-black text-slate-900">
-              Property Database
+              {isTh ? 'ทรัพย์สิน' : 'Property Database'}
             </h1>
             <span className="text-xs font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
-              {dedupedProperties.length} properties
+              {dedupedProperties.length} {isTh ? 'รายการ' : 'properties'}
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Manage villa access codes, installed systems, routine audits, and past job history
+            {isTh ? 'จัดการข้อมูลวิลล่า ระบบที่ติดตั้ง และประวัติงาน' : 'Manage villa access codes, installed systems, routine audits, and past job history'}
           </p>
         </div>
 
@@ -354,7 +358,7 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
           className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm px-3.5 py-2 rounded-xl shadow-xs transition-colors cursor-pointer"
         >
           <Plus className="w-4 h-4 stroke-[3]" />
-          <span>Add Property</span>
+          <span>{isTh ? 'เพิ่มทรัพย์สิน' : 'Add Property'}</span>
         </button>
       </div>
 
@@ -368,7 +372,7 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
               <input
                 type="text"
-                placeholder="Search villa name, area, address..."
+                placeholder={isTh ? 'ค้นหาชื่อวิลล่า พื้นที่ หรือที่อยู่...' : 'Search villa name, area, address...'}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-emerald-500 focus:bg-white"
@@ -384,7 +388,7 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                All ({dedupedProperties.length})
+                {isTh ? 'ทั้งหมด' : 'All'} ({dedupedProperties.length})
               </button>
               {['Kathu', 'Nai Harn', 'Rawai', 'Patong', 'Chalong', 'Bang Tao', 'Cherngtalay'].map((area) => (
                 <button
@@ -407,7 +411,7 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
                     : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
                 }`}
               >
-                Archived ({dedupedProperties.filter((p) => p.isArchived).length})
+                {isTh ? 'เก็บถาวร' : 'Archived'} ({dedupedProperties.filter((p) => p.isArchived).length})
               </button>
             </div>
           </div>
@@ -431,7 +435,7 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 mb-1">
                         <span className="text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded">
-                          {p.propertyType}
+                          {propertyTypeLabel(p.propertyType)}
                         </span>
                         <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded">
                           {p.area}
@@ -444,7 +448,7 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
                         {p.address}
                       </p>
                       <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-2">
-                        <span>Owner: {owner ? (owner.name || owner.fullName || owner.preferredName) : 'Unassigned'}</span>
+                        <span>{isTh ? 'เจ้าของ: ' : 'Owner: '}{owner ? (owner.name || owner.fullName || owner.preferredName) : (isTh ? 'ยังไม่ระบุ' : 'Unassigned')}</span>
                       </div>
                     </div>
                     <ChevronRight
@@ -459,7 +463,7 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
 
             {filteredProperties.length === 0 && (
               <div className="p-8 text-center text-slate-400 bg-white rounded-xl border border-slate-200 text-xs">
-                No properties found matching your search.
+                {isTh ? 'ไม่พบทรัพย์สินที่ตรงกับคำค้นหา' : 'No properties found matching your search.'}
               </div>
             )}
           </div>
@@ -477,7 +481,7 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
                       {selectedProperty.id}
                     </span>
                     <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                      {selectedProperty.propertyType}
+                      {propertyTypeLabel(selectedProperty.propertyType)}
                     </span>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
                       {selectedProperty.area}
@@ -499,7 +503,7 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
                     title="Set up recurring Home Watch plan for this property"
                   >
                     <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>+ Home Watch Plan</span>
+                    <span>{isTh ? '+ แผนดูแลบ้าน' : '+ Home Watch Plan'}</span>
                   </button>
 
                   <button
@@ -523,12 +527,12 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
                     {selectedProperty.isArchived ? (
                       <>
                         <Archive className="w-3.5 h-3.5 text-amber-700" />
-                        <span>Archived</span>
+                        <span>{isTh ? 'เก็บถาวร' : 'Archived'}</span>
                       </>
                     ) : (
                       <>
                         <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                        <span>Delete</span>
+                        <span>{isTh ? 'ลบ' : 'Delete'}</span>
                       </>
                     )}
                   </button>
@@ -555,15 +559,15 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
               <div className="border-b border-slate-200 flex items-center gap-1 overflow-x-auto scrollbar-none pt-1">
                 {(
                   [
-                    { id: 'overview', label: 'Overview' },
-                    { id: 'home_watch', label: `Home Watch (${propertyHomeWatchPlans.length})` },
-                    { id: 'access', label: 'Access' },
-                    { id: 'systems', label: `Systems (${(selectedProperty.systems || selectedProperty.systemsInstalled || []).length})` },
-                    { id: 'jobs', label: `Jobs (${propertyJobs.length})` },
-                    { id: 'inspections', label: 'Inspections' },
-                    { id: 'documents', label: 'Documents' },
-                    { id: 'photos', label: `Photos (${propertyPhotos.length})` },
-                    { id: 'history', label: 'History' },
+                    { id: 'overview', label: isTh ? 'ภาพรวม' : 'Overview' },
+                    { id: 'home_watch', label: `${isTh ? 'ดูแลบ้าน' : 'Home Watch'} (${propertyHomeWatchPlans.length})` },
+                    { id: 'access', label: isTh ? 'การเข้าถึง' : 'Access' },
+                    { id: 'systems', label: `${isTh ? 'ระบบ' : 'Systems'} (${(selectedProperty.systems || selectedProperty.systemsInstalled || []).length})` },
+                    { id: 'jobs', label: `${isTh ? 'งาน' : 'Jobs'} (${propertyJobs.length})` },
+                    { id: 'inspections', label: isTh ? 'การตรวจ' : 'Inspections' },
+                    { id: 'documents', label: isTh ? 'เอกสาร' : 'Documents' },
+                    { id: 'photos', label: `${isTh ? 'รูปภาพ' : 'Photos'} (${propertyPhotos.length})` },
+                    { id: 'history', label: isTh ? 'ประวัติ' : 'History' },
                   ] as { id: PropertyTab; label: string }[]
                 ).map((t) => (
                   <button
