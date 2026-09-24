@@ -9,6 +9,7 @@ interface PaymentModalProps {
   payments?: Payment[];
   jobs?: InspectionJob[];
   presetInvoiceId?: string | null;
+  presetAdvanceJobId?: string | null;
   onRecordPayment: (params: {
     invoiceId: string;
     jobId: string;
@@ -40,11 +41,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   payments = [],
   jobs = [],
   presetInvoiceId,
+  presetAdvanceJobId,
   onRecordPayment,
   onRecordAdvance,
 }) => {
-  const [mode, setMode] = useState<'invoice' | 'advance'>('invoice');
-  const [advanceJobId, setAdvanceJobId] = useState('');
+  const [mode, setMode] = useState<'invoice' | 'advance'>(presetAdvanceJobId ? 'advance' : 'invoice');
+  const [advanceJobId, setAdvanceJobId] = useState(presetAdvanceJobId || '');
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>(
     presetInvoiceId || invoices[0]?.id || ''
   );
@@ -110,7 +112,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   useEffect(() => {
     setValidationError(null);
-    if (presetInvoiceId) {
+    if (presetAdvanceJobId) {
+      setAdvanceJobId(presetAdvanceJobId);
+      setMode('advance');
+      setAmount('');
+    } else if (presetInvoiceId) {
       setSelectedInvoiceId(presetInvoiceId);
       const inv = invoices.find((i) => i.id === presetInvoiceId);
       if (inv) {
@@ -120,7 +126,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setSelectedInvoiceId(invoices[0].id);
       setAmount(String(invoices[0].balanceDue > 0 ? invoices[0].balanceDue : 0));
     }
-  }, [presetInvoiceId, invoices]);
+  }, [presetInvoiceId, presetAdvanceJobId, invoices]);
 
   const handleInvoiceChange = (invId: string) => {
     setSelectedInvoiceId(invId);
