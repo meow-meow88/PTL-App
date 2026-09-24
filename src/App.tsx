@@ -2331,8 +2331,8 @@ export default function App() {
         />
       )}
 
-      {/* Floating Action Button (Molly Express Quotation - Quick 1-Click Access) */}
-      <div className="fixed bottom-20 sm:bottom-6 right-3 sm:right-6 z-40">
+      {/* Keep the field capture and camera controls unobstructed during an active visit. */}
+      {job.status !== 'In Progress' && (!job.visitStartedAt || job.status === 'Completed') && <div className="fixed bottom-20 sm:bottom-6 right-3 sm:right-6 z-40">
         <button
           id="fab-molly-express-quote"
           onClick={() => setIsMollyExpressOpen(true)}
@@ -2351,7 +2351,7 @@ export default function App() {
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400"></span>
           </span>
         </button>
-      </div>
+      </div>}
 
       {/* Molly Express Quotation Copilot Modal */}
       {isMollyExpressOpen && (

@@ -143,6 +143,11 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
   // Scheduled date and 24h time formatting
   const formattedDate = formatDateDisplay(job.scheduledDate || job.inspectionDate, lang);
   const formattedTime = formatTime24h(job.scheduledTime);
+  // The field screen already shows the job context and capture controls. Avoid
+  // repeating the operational summary above it while someone is inspecting.
+  const isFocusedFieldVisit = isElectricalService(job.serviceType) &&
+    (job.status === 'In Progress' || Boolean(job.visitStartedAt) || Boolean(job.siteArrivedAt)) &&
+    !job.scopeConfirmed;
 
   // Customer phone cleanup
   const cleanPhone = (p?: string) => (p || '').replace(/[^0-9+]/g, '');
@@ -576,7 +581,7 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
       {/* 2. TOP OPERATIONAL COMMAND BLOCK (Answers the 8 Core Questions) */}
       {/* Shown only when in active stages (During Inspection, Scope Ready, etc.) */}
       {/* ========================================================================= */}
-      {stateDetails.stage !== 'before_inspection' && (
+      {stateDetails.stage !== 'before_inspection' && !isFocusedFieldVisit && (
         <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-3 sm:pt-4 w-full min-w-0">
           <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-xs space-y-3.5 w-full min-w-0">
             {/* Row A: Customer & Location */}
@@ -810,6 +815,7 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
           />
         ) : isElectricalService(job.serviceType) ? (
           <ElectricalWorkspaceView
+            key={job.id}
             job={job}
             vendors={vendors}
             invoices={invoices}
