@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, DollarSign, Tag, Calendar, FileText, Plus, Receipt } from 'lucide-react';
 import { Expense, ExpenseCategory, InspectionJob } from '../types';
+import { useLanguage } from '../i18n/translations';
 
 interface ExpenseModalProps {
   isOpen: boolean;
@@ -20,6 +21,10 @@ const CATEGORIES: ExpenseCategory[] = [
   'Parking',
   'Other',
 ];
+const TH_CATEGORIES: Record<ExpenseCategory, string> = {
+  Materials: 'วัสดุ', Equipment: 'อุปกรณ์', Fuel: 'น้ำมัน', Travel: 'เดินทาง',
+  Vendor: 'ผู้รับเหมา', Helper: 'ผู้ช่วย', Parking: 'ที่จอดรถ', Other: 'อื่น ๆ',
+};
 
 export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   isOpen,
@@ -28,6 +33,8 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   presetJobId,
   jobs,
 }) => {
+  const { lang } = useLanguage();
+  const th = lang === 'th';
   const [selectedJobId, setSelectedJobId] = useState<string>(
     presetJobId || jobs[0]?.id || ''
   );
@@ -51,7 +58,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
     e.preventDefault();
     const parsedAmount = parseFloat(amount) || 0;
     if (parsedAmount <= 0) {
-      alert('Please enter a valid expense amount');
+      alert(th ? 'กรุณากรอกจำนวนเงินที่ถูกต้อง' : 'Please enter a valid expense amount');
       return;
     }
 
@@ -76,8 +83,8 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   const selectedJob = jobs.find((j) => j.id === selectedJobId);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl relative border border-slate-200">
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+      <div className="bg-white rounded-2xl max-w-md w-full max-h-[calc(100dvh-1.5rem)] overflow-y-auto overscroll-contain p-4 sm:p-6 shadow-2xl relative border border-slate-200 min-w-0">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 bg-slate-100 p-2 rounded-full transition-colors cursor-pointer"
@@ -90,10 +97,10 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
             <span className="p-1.5 bg-rose-100 text-rose-800 rounded-lg">
               <Receipt className="w-4 h-4 text-rose-700" />
             </span>
-            <h2 className="text-lg font-black text-slate-900">Add Job Expense</h2>
+            <h2 className="text-lg font-black text-slate-900 pr-9">{th ? 'บันทึกค่าใช้จ่าย' : 'Add Job Expense'}</h2>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Record cost for materials, fuel, helper, or third-party fees
+            {th ? 'บันทึกค่าวัสดุ น้ำมัน ผู้ช่วย หรือผู้รับเหมา' : 'Record cost for materials, fuel, helper, or third-party fees'}
           </p>
         </div>
 
@@ -101,7 +108,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
           {/* Job Selection */}
           <div>
             <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-              Linked Job *
+              {th ? 'งานที่เกี่ยวข้อง *' : 'Linked Job *'}
             </label>
             <select
               value={selectedJobId}
@@ -119,21 +126,21 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
           {/* Category Pills */}
           <div>
             <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1.5">
-              Category *
+              {th ? 'ประเภทค่าใช้จ่าย *' : 'Category *'}
             </label>
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
               {CATEGORIES.map((cat) => (
                 <button
                   type="button"
                   key={cat}
                   onClick={() => setCategory(cat)}
-                  className={`py-1.5 px-2 rounded-lg text-xs font-bold border text-center transition-all cursor-pointer truncate ${
+                  className={`py-1.5 px-2 rounded-lg text-xs font-bold border text-center transition-all cursor-pointer whitespace-normal ${
                     category === cat
                       ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
                       : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                   }`}
                 >
-                  {cat}
+                  {th ? TH_CATEGORIES[cat] : cat}
                 </button>
               ))}
             </div>
@@ -143,12 +150,12 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             <div className="sm:col-span-2">
               <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                Description *
+                {th ? 'รายละเอียด *' : 'Description *'}
               </label>
               <input
                 type="text"
                 required
-                placeholder="e.g. 50m Cat6 cable, PTT fuel, helper day rate"
+                placeholder={th ? 'เช่น สายไฟ 50 เมตร หรือน้ำมันรถ' : 'e.g. 50m Cat6 cable, PTT fuel, helper day rate'}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 focus:ring-2 focus:ring-blue-500"
@@ -157,7 +164,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
 
             <div>
               <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                Amount (฿) *
+                {th ? 'จำนวนเงิน (บาท) *' : 'Amount (฿) *'}
               </label>
               <input
                 type="number"
@@ -174,7 +181,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <div>
               <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                Date
+                {th ? 'วันที่จ่าย' : 'Date'}
               </label>
               <input
                 type="date"
@@ -186,11 +193,11 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
 
             <div>
               <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                Receipt / Supplier Note
+                {th ? 'เลขใบเสร็จ / ร้านค้า' : 'Receipt / Supplier Note'}
               </label>
               <input
                 type="text"
-                placeholder="e.g. HomePro Nai Harn #991"
+                placeholder={th ? 'เช่น โฮมโปร เลขที่ 991' : 'e.g. HomePro Nai Harn #991'}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800"
@@ -205,13 +212,13 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
               onClick={onClose}
               className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 rounded-xl cursor-pointer"
             >
-              Cancel
+              {th ? 'ยกเลิก' : 'Cancel'}
             </button>
             <button
               type="submit"
               className="px-5 py-2.5 text-xs sm:text-sm font-extrabold bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
             >
-              Save Expense
+              {th ? 'บันทึกค่าใช้จ่าย' : 'Save Expense'}
             </button>
           </div>
         </form>
