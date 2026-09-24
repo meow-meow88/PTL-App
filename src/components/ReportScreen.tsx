@@ -265,7 +265,7 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
   };
 
   const handleSetCoordinateFee = (newRate: number) => {
-    const clampedRate = Math.min(0.15, Math.max(0.05, Math.round(newRate * 100) / 100));
+    const clampedRate = Math.min(0.15, Math.max(0, Math.round(newRate * 100) / 100));
     if (onUpdateQuotation) {
       onUpdateQuotation({
         ...job.quotation,
@@ -717,500 +717,157 @@ Phuket Trusted Local • Peace of Mind Technical Audits`;
                 {isUploadingReportLogo ? 'กำลังบันทึก...' : 'เปลี่ยนโลโก้เอกสาร'}
               </button>
             </div>
-        {/* Google Drive Archive & Instant Share Bar */}
-        <div className="mb-4 p-3.5 bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="flex items-start sm:items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
-              <FolderOpen className="w-5 h-5 text-blue-600" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-bold text-slate-800">
-                  📁 Google Drive Photo Evidence (Cloud Archive)
-                </span>
-                <span className="text-[10px] bg-blue-100 text-blue-800 font-semibold px-2 py-0.5 rounded-full">
-                  RAW High-Res
-                </span>
-                {job.driveFolderUrl && (
-                  isDemoDrive(job.driveFolderUrl) ? (
-                    <button
-                      type="button"
-                      onClick={() => setIsDriveWarningModalOpen(true)}
-                      className="inline-flex items-center gap-1 text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold px-2 py-0.5 rounded-full border border-amber-300 transition-colors"
-                      title="คลิกเพื่อดูคำแนะนำการใส่โฟลเดอร์จริง"
-                    >
-                      <AlertTriangle className="w-3 h-3 text-amber-700 shrink-0" />
-                      <span>ลิงก์จำลอง (Demo Link)</span>
-                    </button>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-100 text-emerald-900 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
-                      <Check className="w-3 h-3 text-emerald-700 shrink-0" />
-                      <span>โฟลเดอร์จริงพร้อมใช้งาน</span>
-                    </span>
-                  )
-                )}
-              </div>
-              <div className="text-[11px] text-slate-500 truncate max-w-md sm:max-w-lg mt-0.5">
-                {job.driveFolderUrl ? (
-                  <a
-                    href={job.driveFolderUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={handleOpenDriveLink}
-                    className="text-blue-600 hover:underline inline-flex items-center gap-1 font-mono"
-                  >
-                    <span className="truncate">{job.driveFolderUrl}</span>
-                    <ExternalLink className="w-3 h-3 shrink-0" />
-                  </a>
-                ) : (
-                  <span className="text-amber-600">ยังไม่ได้ระบุลิงก์โฟลเดอร์ Google Drive</span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
-            {onOpenGoogleDrive && (
-              <button
-                type="button"
-                onClick={onOpenGoogleDrive}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#102a4e] hover:bg-blue-900 text-white transition-colors shadow-2xs cursor-pointer"
-                title="เปิดระบบจัดการ Google Drive และอัปโหลดภาพอัตโนมัติ"
-              >
-                <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
-                <span>⚡ ซิงค์ Drive API</span>
+            {downloadSuccess && (
+              <p className="mb-4 text-xs text-emerald-700">สร้างเอกสารแล้ว ตรวจไฟล์ที่ดาวน์โหลดก่อนส่งให้ลูกค้า</p>
+            )}
+        <div className="mb-5 rounded-xl border border-slate-200 p-4">
+          <p className="mb-3 text-sm font-bold text-slate-800">ดูและส่งเอกสาร</p>
+          <div className="grid grid-cols-3 gap-2" role="group" aria-label="เลือกเอกสาร">
+            {([
+              { id: 'photo-evidence' as const, label: 'รูปหน้างาน' },
+              { id: 'findings-report' as const, label: 'รายงานตรวจ' },
+              { id: 'quotation' as const, label: docSubMode === 'invoice' ? 'ใบแจ้งหนี้' : 'ใบเสนอราคา' },
+            ]).map(({ id, label }) => (
+              <button key={id} type="button" onClick={() => setActiveTab(id)}
+                aria-pressed={activeTab === id}
+                className={`min-w-0 rounded-lg px-2 py-2.5 text-xs font-semibold ${activeTab === id ? 'bg-[#102a4e] text-white' : 'bg-slate-100 text-slate-700'}`}>
+                {label}
               </button>
-            )}
-
-            {job.driveFolderUrl && (
-              <>
-                <a
-                  href={job.driveFolderUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={handleOpenDriveLink}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors border border-blue-200"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>เปิดไดรฟ์</span>
-                </a>
-                <button
-                  onClick={handleCopyDriveUrl}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
-                  title="คัดลอกลิงก์ Google Drive"
-                >
-                  {copiedDrive ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-600" />
-                      <span className="text-emerald-700">คัดลอกแล้ว</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>คัดลอกลิงก์</span>
-                    </>
-                  )}
-                </button>
-              </>
-            )}
-
-            <button
-              onClick={() => setIsEditingDrive(!isEditingDrive)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
-            >
-              <Edit3 className="w-3.5 h-3.5" />
-              <span>{isEditingDrive ? 'ปิดแก้ไข' : 'แก้ไขลิงก์'}</span>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={() => handleOpenDocPreview(activeTab)}
+              className="min-h-[44px] rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white">เปิดพรีวิว</button>
+            <button type="button" onClick={handleDownloadSingle} disabled={isGeneratingSingle || isGeneratingAll}
+              className="min-h-[44px] rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">
+              {isGeneratingSingle ? 'กำลังสร้าง PDF...' : 'ดาวน์โหลด PDF'}
             </button>
-
-            <button
-              onClick={() => setIsShareModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-xs"
-            >
-              <Share2 className="w-3.5 h-3.5" />
-              <span>แชร์ WhatsApp / LINE</span>
-            </button>
+            <button type="button" onClick={triggerNativePrint}
+              className="min-h-[44px] rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700">พิมพ์</button>
+            <button type="button" onClick={() => setIsShareModalOpen(true)}
+              className="min-h-[44px] rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700">แชร์สรุปงาน</button>
           </div>
         </div>
 
-        {/* Inline Drive Editor */}
-        {isEditingDrive && (
-          <div className="mb-4 p-4 bg-blue-50/70 rounded-xl border border-blue-200 animate-in fade-in space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-bold text-slate-800">
-                กำหนดหรือเปลี่ยนลิงก์ Google Drive Folder สำหรับงานนี้
-              </span>
-              <div className="flex items-center gap-2">
-                <a
-                  href="https://drive.google.com/drive/my-drive"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-[11px] text-blue-700 hover:text-blue-900 bg-white hover:bg-blue-50 px-2.5 py-1 rounded-md border border-blue-300 font-semibold transition-colors shadow-2xs"
-                >
-                  <FolderOpen className="w-3.5 h-3.5 text-blue-600" />
-                  <span>เปิด Google Drive เพื่อสร้าง/คัดลอกลิงก์</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-                <button
-                  type="button"
-                  onClick={handleAutoGenerateDriveUrl}
-                  className="text-[11px] text-slate-500 hover:text-blue-700 font-semibold underline"
-                  title="สร้างลิงก์สมมุติเพื่อใช้พรีวิวเอกสาร"
-                >
-                  ⚡ สุ่มลิงก์จำลอง (Demo)
-                </button>
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <input
-                type="url"
-                value={driveInput}
-                onChange={(e) => setDriveInput(e.target.value)}
-                placeholder="https://drive.google.com/drive/folders/1abc... (วางลิงก์โฟลเดอร์จริงที่นี่)"
-                className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 outline-hidden bg-white font-mono"
-              />
-              <button
-                onClick={handleSaveDriveUrl}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors shrink-0 shadow-xs"
-              >
-                บันทึกลิงก์
+        {activeTab === 'quotation' && (
+          <div className="mb-5 rounded-xl border border-slate-200 p-4">
+            <p className="mb-3 text-sm font-bold text-slate-800">ประเภทเอกสาร</p>
+            <div className="grid grid-cols-2 gap-2" role="group" aria-label="ประเภทเอกสารการเงิน">
+              <button type="button" onClick={() => setDocSubMode('quotation')} aria-pressed={docSubMode === 'quotation'}
+                className={`min-h-[44px] rounded-lg px-3 py-2 text-sm font-semibold ${docSubMode === 'quotation' ? 'bg-[#102a4e] text-white' : 'bg-slate-100 text-slate-700'}`}>
+                ใบเสนอราคา
+              </button>
+              <button type="button" onClick={() => setDocSubMode('invoice')} aria-pressed={docSubMode === 'invoice'}
+                className={`min-h-[44px] rounded-lg px-3 py-2 text-sm font-semibold ${docSubMode === 'invoice' ? 'bg-[#102a4e] text-white' : 'bg-slate-100 text-slate-700'}`}>
+                ใบแจ้งหนี้
               </button>
             </div>
-
-            {/* Step-by-step guidance */}
-            <div className="text-[11px] text-slate-700 bg-white/90 p-3 rounded-lg border border-blue-100 space-y-1.5">
-              <div className="font-bold text-slate-800 flex items-center gap-1.5">
-                <Info className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                <span>วิธีนำลิงก์โฟลเดอร์จริงจาก Google Drive มาวาง (แก้ปัญหา File not found):</span>
-              </div>
-              <ol className="list-decimal list-inside space-y-1 text-slate-600 text-[11px] pl-1">
-                <li>เปิดแอป <strong>Google Drive</strong> บน iPhone หรือเข้าเว็บ <strong>drive.google.com</strong></li>
-                <li>สร้างโฟลเดอร์ใหม่ (เช่น <span className="font-mono text-slate-800 font-semibold">Job PTL - {job.customerName}</span>) หรือเลือกโฟลเดอร์ที่มีอยู่</li>
-                <li>แตะจุดสามจุด <span className="font-mono font-bold">(...)</span> &gt; เลือก <strong>"จัดการคนและลิงก์" (Share)</strong></li>
-                <li>เปลี่ยนสิทธิ์เป็น <strong>"ทุกคนที่มีลิงก์" (Anyone with the link)</strong> แล้วกด <strong>"คัดลอกลิงก์" (Copy Link)</strong></li>
-                <li>นำลิงก์มาวางในช่องด้านบน แล้วกด <strong>"บันทึกลิงก์"</strong></li>
-              </ol>
-            </div>
+            <p className="mt-2 text-xs text-slate-500">เลือกใบเสนอราคาก่อนขออนุมัติ หรือใบแจ้งหนี้เมื่อต้องเรียกเก็บเงิน</p>
           </div>
         )}
 
-        {/* Document Tabs & Direct Action Bar */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
-          <div className="grid grid-cols-3 gap-1.5 bg-slate-200/80 p-1.5 rounded-xl border border-slate-300/80 w-full lg:w-auto shadow-inner">
-            <button
-              type="button"
-              onClick={() => setActiveTab('photo-evidence')}
-              className={`flex items-center justify-center gap-1 sm:gap-2 px-2.5 py-2.5 rounded-lg text-xs font-bold transition-all text-center ${
-                activeTab === 'photo-evidence'
-                  ? 'bg-[#102a4e] text-white shadow-md'
-                  : 'bg-white/90 text-slate-700 hover:bg-white hover:text-slate-950'
-              }`}
-            >
-              <Camera className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">1. Photo Log</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('findings-report')}
-              className={`flex items-center justify-center gap-1 sm:gap-2 px-2.5 py-2.5 rounded-lg text-xs font-bold transition-all text-center ${
-                activeTab === 'findings-report'
-                  ? 'bg-[#102a4e] text-white shadow-md'
-                  : 'bg-white/90 text-slate-700 hover:bg-white hover:text-slate-950'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">2. Site Report</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('quotation')}
-              className={`flex items-center justify-center gap-1 sm:gap-2 px-2.5 py-2.5 rounded-lg text-xs font-bold transition-all text-center ${
-                activeTab === 'quotation'
-                  ? 'bg-[#102a4e] text-white shadow-md'
-                  : 'bg-white/90 text-slate-700 hover:bg-white hover:text-slate-950'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">
-                3. {docSubMode === 'invoice' ? 'Invoice' : 'Quotation'}
-              </span>
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap">
-            <button
-              type="button"
-              onClick={() => handleOpenDocPreview(activeTab)}
-              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-xs transition-colors shrink-0 min-h-[42px] cursor-pointer"
-              title="เปิดดูเอกสารพรีวิวความคมชัดสูงเต็มจอ พร้อมปุ่มพิมพ์และส่งต่อ"
-            >
-              <Eye className="w-4 h-4 text-white" />
-              <span>เปิดดูพรีวิว (Full Preview)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={triggerNativePrint}
-              className="inline-flex items-center justify-center gap-1.5 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-300 shadow-xs transition-colors shrink-0 min-h-[42px] cursor-pointer"
-              title="สั่งพิมพ์หรือบันทึกเป็น PDF ผ่านระบบมาตรฐานของอุปกรณ์"
-            >
-              <Printer className="w-3.5 h-3.5 text-slate-600" />
-              <span className="hidden sm:inline">พิมพ์ / PDF</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDownloadSingle}
-              disabled={isGeneratingSingle || isGeneratingAll}
-              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 bg-[#102a4e] hover:bg-blue-900 active:bg-blue-950 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-xs transition-colors shrink-0 disabled:opacity-50 min-h-[42px] cursor-pointer"
-            >
-              {isGeneratingSingle ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-              ) : (
-                <Download className="w-3.5 h-3.5 text-white" />
-              )}
-              <span>
-                {activeTab === 'quotation' && docSubMode === 'invoice'
-                  ? 'ดาวน์โหลด Invoice'
-                  : 'ดาวน์โหลด PDF'}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {/* Quotation vs Invoice Sub-mode Selector */}
-        {activeTab === 'quotation' && (
-          <div className="mb-4 bg-gradient-to-r from-blue-900 to-indigo-950 p-3 sm:p-4 rounded-xl text-white shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-blue-200">
-                  DOCUMENT MODE / โหมดเอกสารการเงิน
-                </span>
-                <span className="bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                  Molly Ready
-                </span>
+        <details className="mb-4 rounded-xl border border-slate-200 bg-white">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800">
+            รูปต้นฉบับและ Google Drive {job.driveFolderUrl && !isDemoDrive(job.driveFolderUrl) ? '· เชื่อมแล้ว' : '· ยังไม่เชื่อมโฟลเดอร์จริง'}
+          </summary>
+          <div className="space-y-3 border-t border-slate-100 p-4">
+            {job.driveFolderUrl && !isDemoDrive(job.driveFolderUrl) ? (
+              <div className="flex flex-wrap gap-2">
+                <a href={job.driveFolderUrl} target="_blank" rel="noopener noreferrer" onClick={handleOpenDriveLink}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">เปิดโฟลเดอร์</a>
+                <button type="button" onClick={handleCopyDriveUrl}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">
+                  {copiedDrive ? 'คัดลอกแล้ว' : 'คัดลอกลิงก์'}
+                </button>
               </div>
-              <p className="text-xs text-blue-100/90 mt-0.5">
-                เลือกออก <strong>ใบเสนอราคา (Quotation)</strong> เพื่อให้ลูกค้าอนุมัติ หรืองานเสร็จแล้วออก <strong>ใบแจ้งหนี้ (Invoice)</strong> พร้อมช่องทางโอนเงิน/PromptPay
-              </p>
-            </div>
-
-            <div className="flex bg-blue-950/80 p-1 rounded-xl border border-blue-700/60 shrink-0 self-stretch sm:self-auto">
-              <button
-                type="button"
-                onClick={() => setDocSubMode('quotation')}
-                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
-                  docSubMode === 'quotation'
-                    ? 'bg-white text-[#102a4e] shadow-xs'
-                    : 'text-blue-200 hover:text-white'
-                }`}
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>📄 ใบเสนอราคา (Quotation)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDocSubMode('invoice')}
-                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
-                  docSubMode === 'invoice'
-                    ? 'bg-emerald-500 text-slate-950 font-black shadow-xs'
-                    : 'text-blue-200 hover:text-white'
-                }`}
-              >
-                <CheckCircle className="w-3.5 h-3.5" />
-                <span>💳 ใบแจ้งหนี้ (Invoice / Billing)</span>
+            ) : (
+              <div className="text-xs text-amber-700">
+                {job.driveFolderUrl ? 'ลิงก์ปัจจุบันเป็นตัวอย่าง กรุณาใส่โฟลเดอร์จริงก่อนแชร์' : 'ยังไม่มีโฟลเดอร์สำหรับเก็บรูปต้นฉบับ'}
+                {job.driveFolderUrl && <button type="button" onClick={() => setIsDriveWarningModalOpen(true)} className="ml-2 underline">ดูวิธีแก้</button>}
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {onOpenGoogleDrive && <button type="button" onClick={onOpenGoogleDrive}
+                className="rounded-lg bg-[#102a4e] px-3 py-2 text-xs font-semibold text-white">จัดการ Drive</button>}
+              <button type="button" onClick={() => setIsEditingDrive(!isEditingDrive)}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">
+                {isEditingDrive ? 'ปิดการแก้ไข' : 'ใส่หรือแก้ลิงก์'}
               </button>
             </div>
-
-            {onOpenMollyExpress && (
-              <button
-                id="report-screen-btn-molly-express"
-                type="button"
-                onClick={onOpenMollyExpress}
-                className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 hover:from-amber-300 hover:to-orange-300 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all cursor-pointer ring-2 ring-amber-300/60 shrink-0 self-stretch sm:self-auto"
-                title="คุยกับ Molly เพื่อออกใบเสนอราคาด่วนงานใหม่ใน 5 วินาที"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-slate-950" />
-                <span>💬 คุยกับ Molly (ออกใบเสนอราคาด่วน)</span>
-              </button>
+            {isEditingDrive && (
+              <div className="space-y-2">
+                <label htmlFor="report-drive-url" className="block text-xs font-semibold text-slate-700">ลิงก์โฟลเดอร์ Google Drive</label>
+                <input id="report-drive-url" type="url" value={driveInput} onChange={(e) => setDriveInput(e.target.value)}
+                  placeholder="https://drive.google.com/drive/folders/..."
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" />
+                <button type="button" onClick={handleSaveDriveUrl}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white">บันทึกลิงก์</button>
+                <details className="text-xs text-slate-600">
+                  <summary className="cursor-pointer font-semibold">วิธีคัดลอกลิงก์โฟลเดอร์จริง</summary>
+                  <p className="mt-2">เปิด Google Drive เลือกโฟลเดอร์งาน แล้วคัดลอกลิงก์มาวางด้านบน ตรวจสิทธิ์การเข้าถึงก่อนส่งให้ลูกค้า</p>
+                  <a href="https://drive.google.com/drive/my-drive" target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-blue-700 underline">เปิด Google Drive</a>
+                </details>
+              </div>
             )}
           </div>
-        )}
+        </details>
 
-        {/* Coordinate Fee (5% - 15%) Selector Card */}
         {activeTab === 'quotation' && (
-          <div className="mb-4 p-4 bg-white rounded-xl border border-slate-200 shadow-xs animate-in fade-in">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">
-                  %
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                    <span>Coordinate &amp; Procurement Fee (ค่าจัดหาและประสานงานตรวจรับ)</span>
-                    <span className="bg-amber-100 text-amber-900 text-[11px] font-black px-2 py-0.5 rounded-md">
-                      {currentFeePct}%
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    เลือกปรับอัตราค่าดำเนินการได้ 5% – 15% ตามความซับซ้อนของงาน เพื่อความโปร่งใสและสบายใจของลูกค้า
-                  </p>
-                </div>
+          <>
+            <details className="mb-4 rounded-xl border border-slate-200 bg-white">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800">
+                ค่าจัดหาอุปกรณ์ {currentFeePct}% · +฿{currentFeeAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </summary>
+              <div className="space-y-3 border-t border-slate-100 p-4">
+                <p className="text-xs text-slate-600">คิดจากค่าอุปกรณ์ ฿{hardwareSubtotal.toLocaleString()} ก่อนออกเอกสารให้ลูกค้า</p>
+                <label htmlFor="report-procurement-rate" className="block text-xs font-semibold text-slate-700">เลือกอัตราค่าจัดหา</label>
+                <select id="report-procurement-rate" value={currentFeePct} onChange={(e) => handleSetCoordinateFee(Number(e.target.value) / 100)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800">
+                  {[0, 5, 8, 10, 12, 15].includes(currentFeePct) ? null : <option value={currentFeePct}>{currentFeePct}% (ปัจจุบัน)</option>}
+                  {[0, 5, 8, 10, 12, 15].map((pct) => <option key={pct} value={pct}>{pct}%</option>)}
+                </select>
+                <label htmlFor="report-procurement-slider" className="block text-xs text-slate-600">ปรับละเอียด: {currentFeePct}%</label>
+                <input id="report-procurement-slider" type="range" min="0" max="0.15" step="0.01"
+                  value={currentFeeRate} onChange={(e) => handleSetCoordinateFee(Number(e.target.value))}
+                  className="w-full accent-blue-900" />
               </div>
+            </details>
 
-              {/* Live Calculation summary */}
-              <div className="flex items-center gap-2 text-xs bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 self-start sm:self-auto">
-                <span>ค่าอุปกรณ์ {hardwareSubtotal.toLocaleString()} ฿</span>
-                <span className="text-slate-400">×</span>
-                <span className="font-bold text-amber-700">{currentFeePct}%</span>
-                <span className="text-slate-400">=</span>
-                <span className="font-bold text-slate-900">
-                  +{currentFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ฿
-                </span>
-              </div>
-            </div>
-
-            {/* Presets and Slider */}
-            <div className="space-y-3 pt-1">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[11px] font-bold text-slate-500 mr-1">เลือกอัตราด่วน:</span>
-                {[
-                  { rate: 0.05, label: '5% (Basic)' },
-                  { rate: 0.08, label: '8% (Standard)' },
-                  { rate: 0.10, label: '10% (Silver)' },
-                  { rate: 0.12, label: '12% (Gold)' },
-                  { rate: 0.15, label: '15% (Peace of Mind ★ แนะนำ)' },
-                ].map((preset) => {
-                  const isSelected = Math.abs(currentFeeRate - preset.rate) < 0.005;
-                  return (
-                    <button
-                      key={preset.rate}
-                      type="button"
-                      onClick={() => handleSetCoordinateFee(preset.rate)}
-                      className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                        isSelected
-                          ? 'bg-[#102a4e] text-white shadow-xs scale-102'
-                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                      }`}
-                    >
-                      {preset.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="flex items-center gap-3 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                <SlidersHorizontal className="w-4 h-4 text-slate-400 shrink-0" />
-                <span className="text-[11px] font-bold text-slate-600 shrink-0">สไลเดอร์ปรับละเอียด:</span>
-                <input
-                  type="range"
-                  min="0.05"
-                  max="0.15"
-                  step="0.01"
-                  value={currentFeeRate}
-                  onChange={(e) => handleSetCoordinateFee(parseFloat(e.target.value))}
-                  className="flex-1 accent-blue-900 cursor-pointer"
-                />
-                <span className="text-xs font-black text-slate-900 w-10 text-right font-mono">
-                  {currentFeePct}%
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Molly Coordinator Banner for Quotation */}
-        {activeTab === 'quotation' && (
-          <div className="mb-4 p-3.5 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-blue-900/10 rounded-xl border border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-in fade-in">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-500 to-rose-500 text-white font-black text-xs flex items-center justify-center shadow-xs">
-                M
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                  <span>Molly (The Smart Coordinator)</span>
-                  <span className="text-[10px] bg-amber-100 text-amber-800 font-semibold px-2 py-0.2 rounded-full">
-                    Sourcing &amp; {currentFeePct}% Procurement Fee
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-600">
-                  สืบราคาตลาดไทย (HomePro, Lazada, Shopee) + ค่าจัดหา {currentFeePct}% + เงื่อนไขรับประกัน Peace of Mind
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              {onOpenMollyHardware && (
-                <button
-                  onClick={onOpenMollyHardware}
-                  className="inline-flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-xs font-black px-3.5 py-2 rounded-lg transition-all shadow-xs shrink-0"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>⚡ ถาม Molly (สืบราคาอุปกรณ์ &amp; งานไฟ)</span>
+            <details className="mb-4 rounded-xl border border-slate-200 bg-white">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800">Molly และรายการราคา</summary>
+              <div className="flex flex-wrap gap-2 border-t border-slate-100 p-4">
+                <button type="button" onClick={() => { setQuickEstimateEditServiceIndex(null); setQuickEstimateEditHardwareIndex(null); setIsQuickEstimateOpen(true); }}
+                  className="min-h-[44px] rounded-lg bg-[#102a4e] px-3 py-2 text-xs font-semibold text-white">
+                  แก้รายการ ({(job.quotation?.hardwareItems?.length || 0) + (job.quotation?.serviceItems?.length || 0)})
                 </button>
-              )}
-
-              <button
-                onClick={() => {
-                  setQuickEstimateEditServiceIndex(null);
-                  setQuickEstimateEditHardwareIndex(null);
-                  setIsQuickEstimateOpen(true);
-                }}
-                className="inline-flex items-center justify-center gap-1.5 bg-[#102a4e] hover:bg-blue-900 text-white text-xs font-bold px-3.5 py-2 rounded-lg transition-colors shadow-xs shrink-0"
-                title="จัดการรายการในใบเสนอราคา เพิ่มรายการด่วน แก้ไข หรือลบรายการที่ไม่ต้องการออก"
-              >
-                <Zap className="w-3.5 h-3.5 text-amber-300" />
-                <span>
-                  📋 จัดการ/ลบรายการ (
-                  {(job.quotation?.hardwareItems?.length || 0) +
-                    (job.quotation?.serviceItems?.length || 0)}
-                  )
-                </span>
-              </button>
-
-              <button
-                onClick={handleMollyRefreshQuotation}
-                disabled={isMollyLoading}
-                className="inline-flex items-center justify-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3.5 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50 shrink-0"
-              >
-                {isMollyLoading ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Molly กำลังคำนวณราคา...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>⚡ ให้ Molly คำนวณราคา ({currentFeePct}%)</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                onClick={() => {
-                  const hasExisting =
-                    (job.quotation?.hardwareItems?.length || 0) > 0 ||
-                    (job.quotation?.serviceItems?.length || 0) > 0;
-                  if (hasExisting) {
-                    const onlyMissed = window.confirm(
-                      'คุณต้องการปรับใบเสนอราคาเป็น "ค่าผิดนัดหมาย 1,000 บาท" รายการเดียว (ลบรายการอื่นเดิมออก) หรือไม่?\n\n• กด [ตกลง (OK)]: ตั้งเหลือเฉพาะค่าผิดนัด ฿1,000 รายการเดียวทันที (เหมาะสำหรับส่งลูกค้าค่าผิดนัด)\n• กด [ยกเลิก (Cancel)]: เพิ่มค่าผิดนัด ฿1,000 รวมเข้าไปกับรายการเดิม'
-                    );
-                    handleSetMissedFeeDirectly(!onlyMissed);
-                  } else {
+                {onOpenMollyExpress && <button id="report-screen-btn-molly-express" type="button" onClick={onOpenMollyExpress}
+                  className="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">ให้ Molly ร่างใบเสนอราคา</button>}
+                {onOpenMollyHardware && <button type="button" onClick={onOpenMollyHardware}
+                  className="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">สืบราคาอุปกรณ์</button>}
+                <button type="button" onClick={handleMollyRefreshQuotation} disabled={isMollyLoading}
+                  className="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">
+                  {isMollyLoading ? 'กำลังคำนวณ...' : 'ให้ Molly คำนวณราคา'}
+                </button>
+                <button type="button" onClick={() => {
+                  const hasExisting = (job.quotation?.hardwareItems?.length || 0) + (job.quotation?.serviceItems?.length || 0) > 0;
+                  if (!hasExisting || window.confirm('เพิ่มค่าผิดนัดหมาย ฿1,000 เข้าในใบเสนอราคาปัจจุบันหรือไม่?')) {
+                    handleSetMissedFeeDirectly(hasExisting);
+                  }
+                }} disabled={isMollyLoading}
+                  className="min-h-[44px] rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">
+                  เพิ่มค่าผิดนัด ฿1,000
+                </button>
+                <button type="button" onClick={() => {
+                  if (window.confirm('แทนที่รายการเดิมทั้งหมดด้วยค่าผิดนัด ฿1,000 รายการเดียวหรือไม่?')) {
                     handleSetMissedFeeDirectly(false);
                   }
-                }}
-                disabled={isMollyLoading}
-                className="inline-flex items-center justify-center gap-1.5 bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold px-3.5 py-2 rounded-lg transition-colors shadow-xs disabled:opacity-50 shrink-0"
-                title="ออกใบเสนอราคาค่าผิดนัดหมาย 1,000 บาท (Cancellation / Missed Appointment Fee ตามมาตรฐาน PTL)"
-              >
-                <span>⏱️ ออกใบเสนอราคาค่าผิดนัด (฿1,000)</span>
-              </button>
-            </div>
-          </div>
+                }} disabled={isMollyLoading}
+                  className="min-h-[44px] rounded-lg px-3 py-2 text-xs text-rose-700 underline disabled:opacity-50">
+                  ทำใบเสนอราคาเฉพาะค่าผิดนัด
+                </button>
+              </div>
+            </details>
+          </>
         )}
 
           </div>
