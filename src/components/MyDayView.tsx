@@ -59,6 +59,7 @@ interface MyDayViewProps {
   onOpenEditJob?: (job: InspectionJob) => void;
   onCustomerApprove?: (jobId: string) => void;
   onFinishFieldWork?: (jobId: string) => void;
+  onOpenFinancialJob?: (jobId: string, purpose: 'invoice' | 'advance') => void;
 }
 
 export const MyDayView: React.FC<MyDayViewProps> = ({
@@ -85,6 +86,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
   onOpenEditJob,
   onCustomerApprove,
   onFinishFieldWork,
+  onOpenFinancialJob,
 }) => {
   const { lang, t } = useLanguage();
   const isTh = lang === 'th';
@@ -142,10 +144,14 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
   // =========================================================================
   const activeJobs = jobs.filter((j) => getDominantJobState(j).key === 'in_progress');
   const pendingKeys = new Set(['new', 'waiting_scope', 'scope_confirmed', 'quote_drafted',
-    'waiting_approval', 'waiting_vendor', 'approved_to_schedule', 'scheduled_unconfirmed']);
+    'waiting_approval', 'waiting_vendor', 'approved_to_schedule', 'scheduled_unconfirmed',
+    'waiting_deposit', 'waiting_payment', 'ready_to_close']);
   const pendingJobs = jobs.filter((j) => pendingKeys.has(getDominantJobState(j).key))
     .sort((a, b) => (b.urgency === 'Urgent' ? 1 : 0) - (a.urgency === 'Urgent' ? 1 : 0) ||
       (a.createdAt || '').localeCompare(b.createdAt || ''));
+  const remoteJobs = jobs.filter((j) =>
+    !['Completed', 'Cancelled'].includes(j.status) &&
+    (getDominantJobState(j).key === 'in_progress' || j.waitingOn === 'vendor' || Boolean(j.needsOwnerReview)));
 
   // =========================================================================
   // 2. TODAY'S JOBS
@@ -226,6 +232,28 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
         </div>
       </div>
 
+      {remoteJobs.length > 0 && <section className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs">
+        <h2 className="text-sm font-extrabold text-slate-900 mb-1">{isTh ? 'อัปเดตงานแต่ละสถานที่' : 'Updates across sites'}</h2>
+        <p className="text-xs text-slate-500 mb-3">{isTh ? 'แตะการ์ดเพื่อกลับไปทำงานนั้นต่อ' : 'Tap a card to resume that job'}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {remoteJobs.map((item) => {
+            const state = getDominantJobState(item, lang);
+            const assignee = item.assignedVendorName || vendorMap.get(item.vendorId || item.assignedVendorId || '')?.name ||
+              (isTh ? 'เจ้าของงาน' : 'Owner');
+            return <button key={item.id} type="button" onClick={() => onOpenJobInspection(item.id)}
+              className="text-left rounded-xl border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-300 p-3 min-w-0 cursor-pointer">
+              <span className="block font-bold text-sm text-slate-900 truncate">{item.villaName || item.customerName}</span>
+              <span className="block text-xs text-slate-600 truncate">{item.serviceArea || item.propertyLocation || propertyMap.get(item.propertyId || '')?.area || 'Phuket'} · {assignee}</span>
+              <span className="flex justify-between gap-2 items-center mt-2 text-xs">
+                <span className="font-semibold text-blue-800 truncate">{item.needsOwnerReview ? (isTh ? 'รอเจ้าของตรวจ' : 'Owner review needed') : state.label}</span>
+                <span className="text-slate-500 shrink-0">{isTh ? 'ทำต่อ ›' : 'Resume ›'}</span>
+              </span>
+              {item.lastActivityAt && <span className="block text-[10px] text-slate-500 mt-1">{isTh ? 'อัปเดต' : 'Updated'} {new Date(item.lastActivityAt).toLocaleString(isTh ? 'th-TH' : 'en-US')}</span>}
+            </button>;
+          })}
+        </div>
+      </section>}
+
       <section className="bg-white rounded-2xl p-4 sm:p-5 border border-amber-200 shadow-xs w-full min-w-0">
         <h2 className="text-base font-extrabold text-slate-900 mb-3">{isTh ? 'งานที่ต้องทำต่อ' : 'Next actions'} ({pendingJobs.length})</h2>
         {pendingJobs.length === 0 ? <p className="text-sm text-slate-500">{isTh ? 'ไม่มีงานค้างที่ต้องดำเนินการ' : 'No pending jobs'}</p> : (
@@ -238,6 +266,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
               onConfirmAppointment={onConfirmAppointment} onOpenCompactAppointment={onOpenCompactAppointment}
               onOpenEditJob={onOpenEditJob} onUpdateJobStatus={onUpdateJobStatus}
               onCustomerApprove={onCustomerApprove} onFinishFieldWork={onFinishFieldWork}
+              onOpenFinancialJob={onOpenFinancialJob}
               onSelectProperty={onSelectProperty} onSelectCustomer={onSelectCustomer} />)}
           </div>
         )}
