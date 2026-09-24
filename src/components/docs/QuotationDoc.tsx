@@ -36,20 +36,20 @@ export const QuotationDoc: React.FC<QuotationDocProps> = ({
 
   // Toggle for separate page for Terms & Guarantee + Signatures with bi-directional synchronization
   const [internalSeparatePage, setInternalSeparatePage] = React.useState<boolean>(
-    separateTermsPage ?? job.quotation?.separateTermsPage ?? false
+    separateTermsPage ?? (job.quotation?.termsLayoutVersion === 2 && job.quotation.separateTermsPage === true)
   );
 
   React.useEffect(() => {
     if (separateTermsPage !== undefined) {
       setInternalSeparatePage(separateTermsPage);
-    } else if (job.quotation?.separateTermsPage !== undefined) {
-      setInternalSeparatePage(job.quotation.separateTermsPage);
+    } else {
+      setInternalSeparatePage(job.quotation?.termsLayoutVersion === 2 && job.quotation.separateTermsPage === true);
     }
-  }, [separateTermsPage, job.quotation?.separateTermsPage]);
+  }, [separateTermsPage, job.quotation?.separateTermsPage, job.quotation?.termsLayoutVersion]);
 
   const useSeparateTermsPage = separateTermsPage !== undefined
     ? separateTermsPage
-    : (job.quotation?.separateTermsPage !== undefined ? job.quotation.separateTermsPage : internalSeparatePage);
+    : internalSeparatePage;
 
   const handleToggleLayout = (val: boolean) => {
     setInternalSeparatePage(val);
@@ -174,7 +174,7 @@ export const QuotationDoc: React.FC<QuotationDocProps> = ({
         <div className="flex items-center gap-1.5 text-slate-700">
           <span className="font-bold">📄 การจัดหน้าเอกสาร (Page Layout):</span>
           <span className="text-[11px] text-slate-500">
-            {useSeparateTermsPage ? 'แยก Terms & ลายเซ็นขึ้นหน้า 2 (2 หน้า A4 สะอาดตา)' : 'รวม 1 หน้าพอดี (Single Page Compact)'}
+            {useSeparateTermsPage ? 'แยกเงื่อนไขและลายเซ็นขึ้นหน้าใหม่' : 'เงื่อนไขและการรับประกันต่อใต้สรุปราคา'}
           </span>
         </div>
         <div className="flex items-center gap-1 bg-white p-1 rounded-md border border-slate-300 shadow-2xs">
@@ -187,7 +187,7 @@ export const QuotationDoc: React.FC<QuotationDocProps> = ({
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            1 หน้าพอดี (Single Page)
+            ต่อใต้สรุปราคา
           </button>
           <button
             type="button"
@@ -198,7 +198,7 @@ export const QuotationDoc: React.FC<QuotationDocProps> = ({
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            📑 แยก Terms หน้า 2 (2 Pages)
+            📑 แยกหน้าเงื่อนไข
           </button>
         </div>
       </div>
@@ -869,7 +869,7 @@ export const QuotationDoc: React.FC<QuotationDocProps> = ({
           </div>
         </>
       ) : (
-        /* SINGLE PAGE MODE: Terms & Signatures directly on Page 1 */
+        /* Inline terms flow after the totals; longer quotations can continue on another PDF page. */
         <>
           {/* Terms & Contingency (Guaranteed 2 columns side-by-side with structured titles) */}
           <div
@@ -944,7 +944,7 @@ export const QuotationDoc: React.FC<QuotationDocProps> = ({
           {/* Footer */}
           <div className="mt-4 pt-2 border-t border-slate-200 flex justify-between items-center text-[10px] text-slate-400">
             <span>{isInvoice ? 'PHUKET TRUSTED LOCAL • Official Invoice / Billing' : 'PHUKET TRUSTED LOCAL • Official Quotation'}</span>
-            <span>Page 1 of 1</span>
+            <span>{refNumber}</span>
           </div>
         </>
       )}
