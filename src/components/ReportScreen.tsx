@@ -651,7 +651,7 @@ Phuket Trusted Local • Peace of Mind Technical Audits`;
           title="กลับไปหน้าหลัก"
         >
           <ArrowLeft className="w-4 h-4 text-sky-300 shrink-0" />
-          <span>กลับไปหน้าหลัก (Home)</span>
+          <span>กลับ</span>
         </button>
 
         <div className="flex items-center gap-3">
@@ -662,19 +662,6 @@ Phuket Trusted Local • Peace of Mind Technical Audits`;
             onChange={handleReportLogoUpload}
             className="hidden"
           />
-          <button
-            type="button"
-            onClick={() => reportLogoInputRef.current?.click()}
-            className="inline-flex items-center gap-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs px-3 py-2 rounded-xl transition-all shadow-xs cursor-pointer min-h-[44px]"
-            title="แตะเพื่อเลือกไฟล์รูปต้นฉบับที่คุณอัปโหลด (IMG_4062.JPG) ห้ามดัดแปลง"
-          >
-            <Upload className="w-3.5 h-3.5 text-slate-950" />
-            <span className="hidden sm:inline">
-              {isUploadingReportLogo ? 'กำลังบันทึก...' : 'อัปโหลดรูปต้นฉบับ (ห้ามดัดแปลง)'}
-            </span>
-            <span className="sm:hidden">รูปต้นฉบับ</span>
-          </button>
-
           <div className="text-right min-w-0">
             <div className="text-[11px] font-mono text-sky-200 truncate font-semibold">
               Job: {job.id}
@@ -687,231 +674,49 @@ Phuket Trusted Local • Peace of Mind Technical Audits`;
       </nav>
 
       <div className="max-w-5xl mx-auto px-3.5 sm:px-6 pt-4 sm:pt-5 w-full min-w-0">
-        {/* Official Generated Files List matching user's exact specification */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-md mb-6 overflow-hidden">
-          {/* Top Header Card */}
-          <div className="bg-gradient-to-r from-[#102a4e] via-[#163a6b] to-[#1e4b85] text-white p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="bg-sky-400 text-slate-950 font-black text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-xs">
-                  Official Standard Files
-                </span>
-                <span className="text-xs text-sky-200 font-medium">3 ไฟล์มาตรฐาน PTL พร้อมส่งลูกค้า</span>
-              </div>
-              <h2 className="text-lg sm:text-xl font-bold text-white">
-                📋 รายการไฟล์เอกสารตรวจหน้างาน &amp; ใบเสนอราคา
-              </h2>
-              <p className="text-xs text-sky-100/80 mt-0.5">
-                กดสร้างเสร็จแสดงเป็นไฟล์ลิสต์ทันที สามารถเปิดดู พรีวิว หรือดาวน์โหลดไฟล์ได้โดยตรง
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={handleDownloadAllThree}
-                disabled={isGeneratingAll || isGeneratingSingle}
-                className="bg-sky-400 hover:bg-sky-300 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 disabled:opacity-50 min-h-[40px] cursor-pointer"
-              >
-                {isGeneratingAll ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
-                    <span>{progressMsg || 'กำลังสร้างไฟล์ทั้งหมด...'}</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 text-slate-950" />
-                    <span>⚡ สร้าง PDF ทั้ง 3 ไฟล์</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={triggerNativePrint}
-                className="bg-white/10 hover:bg-white/20 text-white font-semibold px-3.5 py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 border border-white/25 transition-colors min-h-[40px] cursor-pointer"
-                title="พิมพ์หรือบันทึกเป็น PDF แท้จากเครื่อง"
-              >
-                <Printer className="w-4 h-4 text-sky-300" />
-                <span>🖨️ พิมพ์ / PDF</span>
-              </button>
-            </div>
+        {/* One clear entry point per document. Creation and sharing remain available in the preview. */}
+        <section className="mb-5 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden" aria-label="Document Center">
+          <div className="px-4 py-5 sm:px-6 border-b border-slate-100">
+            <p className="text-xs font-semibold text-sky-700">DOCUMENT CENTER</p>
+            <h1 className="mt-1 text-xl font-bold text-slate-900">เอกสารของงานนี้</h1>
+            <p className="mt-1 text-sm text-slate-600">เลือกเอกสารเพื่อตรวจทาน แล้วดาวน์โหลดหรือแชร์จากหน้าพรีวิว</p>
           </div>
-
-          {/* 3 Core Official Documents List */}
           <div className="divide-y divide-slate-100">
-            {/* File 1: Photo Evidence Log */}
-            <div className="p-4 sm:p-4.5 hover:bg-slate-50/80 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
-                  <Camera className="w-5 h-5" />
+            {([
+              { id: 'photo-evidence' as const, icon: Camera, title: 'รูปและหลักฐานหน้างาน', detail: `${job.items.length} จุดตรวจ` },
+              { id: 'findings-report' as const, icon: Layers, title: 'รายงานตรวจหน้างาน', detail: 'ผลตรวจและข้อบกพร่อง' },
+              { id: 'quotation' as const, icon: FileText, title: docSubMode === 'invoice' ? 'ใบแจ้งหนี้' : 'ใบเสนอราคา', detail: docSubMode === 'invoice' ? 'ยอดและรายละเอียดเรียกเก็บ' : 'ราคา เงื่อนไข และการรับประกัน' },
+            ]).map(({ id, icon: Icon, title, detail }) => (
+              <div key={id} className="flex items-center gap-3 px-4 py-4 sm:px-6">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-700">
+                  <Icon className="h-5 w-5" />
                 </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-slate-900 text-sm">
-                      1. Photo Evidence Log (บันทึกภาพถ่ายหลักฐานหน้างาน)
-                    </span>
-                    <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-full">
-                      {job.items.length} จุดตรวจ
-                    </span>
-                    {generatedResults?.photo && (
-                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
-                        <Check className="w-3 h-3" /> สร้างแล้ว
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-slate-500 font-mono mt-0.5 truncate">
-                    1_PTL_Photo_Evidence_Log_{job.id}.pdf
-                  </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-sm font-bold text-slate-900">{title}</h2>
+                  <p className="text-xs text-slate-500">{detail}</p>
                 </div>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => handleGenerateFile('photo', 'view')}
-                  disabled={isGeneratingSingle || isGeneratingAll}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-lg border border-blue-200 transition-colors cursor-pointer"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>เปิดดูพรีวิว</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleGenerateFile('photo', 'download')}
-                  disabled={isGeneratingSingle || isGeneratingAll}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#102a4e] hover:bg-blue-900 text-white text-xs font-bold rounded-lg transition-colors shadow-2xs cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>ดาวน์โหลด PDF</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsShareModalOpen(true)}
-                  className="inline-flex items-center gap-1 px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                  title="แชร์สรุปให้ลูกค้า"
-                >
-                  <Share2 className="w-3.5 h-3.5" />
+                <button type="button" onClick={() => handleOpenDocPreview(id)}
+                  className="shrink-0 rounded-xl bg-[#102a4e] px-4 py-2.5 text-sm font-semibold text-white min-h-[44px]">
+                  เปิดดู
                 </button>
               </div>
-            </div>
-
-            {/* File 2: Site Inspection Report */}
-            <div className="p-4 sm:p-4.5 hover:bg-amber-50/40 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-amber-50/15">
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200">
-                  <Layers className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-slate-900 text-sm">
-                      2. Site Inspection Report (รายงานตรวจสภาพหน้างานและข้อบกพร่อง)
-                    </span>
-                    <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-2 py-0.5 rounded-full">
-                      Engineering Audit
-                    </span>
-                    {generatedResults?.findings && (
-                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
-                        <Check className="w-3 h-3" /> สร้างแล้ว
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-slate-500 font-mono mt-0.5 truncate">
-                    2_PTL_Site_Inspection_Report_{job.id}.pdf
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => handleGenerateFile('findings', 'view')}
-                  disabled={isGeneratingSingle || isGeneratingAll}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-lg border border-blue-200 transition-colors cursor-pointer"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>เปิดดูพรีวิว</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleGenerateFile('findings', 'download')}
-                  disabled={isGeneratingSingle || isGeneratingAll}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#102a4e] hover:bg-blue-900 text-white text-xs font-bold rounded-lg transition-colors shadow-2xs cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>ดาวน์โหลด PDF</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsShareModalOpen(true)}
-                  className="inline-flex items-center gap-1 px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                  title="แชร์สรุปให้ลูกค้า"
-                >
-                  <Share2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            {/* File 3: Quotation / Invoice */}
-            <div className="p-4 sm:p-4.5 hover:bg-slate-50/80 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-200">
-                  <FileText className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-slate-900 text-sm">
-                      3. {docSubMode === 'invoice' ? 'Official Invoice (ใบแจ้งหนี้รับเงิน)' : 'Official Quotation (ใบเสนอราคา & ประกัน 1 ปี)'}
-                    </span>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
-                      ฿{grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                    {generatedResults?.quote && (
-                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
-                        <Check className="w-3 h-3" /> สร้างแล้ว
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-slate-500 font-mono mt-0.5 truncate">
-                    {docSubMode === 'invoice'
-                      ? `3_PTL_Invoice_${job.quotation.invoiceNo || job.quotation.refNo.replace('PTL-QT-', 'PTL-INV-')}.pdf`
-                      : `3_PTL_Quotation_${job.quotation.refNo}.pdf`}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => handleGenerateFile('quote', 'view')}
-                  disabled={isGeneratingSingle || isGeneratingAll}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-lg border border-blue-200 transition-colors cursor-pointer"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>เปิดดูพรีวิว</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleGenerateFile('quote', 'download')}
-                  disabled={isGeneratingSingle || isGeneratingAll}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#102a4e] hover:bg-blue-900 text-white text-xs font-bold rounded-lg transition-colors shadow-2xs cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>ดาวน์โหลด PDF</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsShareModalOpen(true)}
-                  className="inline-flex items-center gap-1 px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                  title="แชร์สรุปให้ลูกค้า"
-                >
-                  <Share2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
+            ))}
           </div>
-        </div>
+        </section>
 
+        <details className="mb-5 rounded-2xl border border-slate-200 bg-white" open={initialAction === 'edit' ? true : undefined}>
+          <summary className="cursor-pointer px-4 py-4 text-sm font-semibold text-slate-800 sm:px-6">จัดการเอกสารและไฟล์เพิ่มเติม</summary>
+          <div className="border-t border-slate-100 px-3 pt-4 sm:px-5">
+            <div className="mb-4 flex flex-wrap gap-2">
+              <button type="button" onClick={handleDownloadAllThree} disabled={isGeneratingAll || isGeneratingSingle}
+                className="rounded-xl bg-[#102a4e] px-4 py-2.5 text-xs font-bold text-white disabled:opacity-50">
+                {isGeneratingAll ? progressMsg || 'กำลังสร้าง...' : 'ดาวน์โหลดเอกสารทั้ง 3 ฉบับ'}
+              </button>
+              <button type="button" onClick={() => reportLogoInputRef.current?.click()}
+                className="rounded-xl border border-slate-300 px-4 py-2.5 text-xs font-semibold text-slate-700">
+                {isUploadingReportLogo ? 'กำลังบันทึก...' : 'เปลี่ยนโลโก้เอกสาร'}
+              </button>
+            </div>
         {/* Google Drive Archive & Instant Share Bar */}
         <div className="mb-4 p-3.5 bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-start sm:items-center gap-3">
@@ -1408,6 +1213,9 @@ Phuket Trusted Local • Peace of Mind Technical Audits`;
           </div>
         )}
 
+          </div>
+        </details>
+
         {/* Live Document Preview Display */}
         <div className="w-full max-w-full min-w-0 mb-8 overflow-hidden">
           <div className="flex items-center justify-between text-xs text-slate-500 mb-2 px-1">
@@ -1683,21 +1491,6 @@ Phuket Trusted Local • Peace of Mind Technical Audits`;
         />
       </div>
 
-      {/* Floating Quick Back Button on Mobile for Easy Return to Main List */}
-      <aside
-        className="fixed bottom-5 left-4 z-40 sm:hidden"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-        aria-label="Quick Navigation"
-      >
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex items-center gap-2 bg-[#102a4e] hover:bg-[#163a6b] text-white font-bold text-xs px-4 py-2.5 rounded-full shadow-2xl border-2 border-sky-400/60 active:scale-95 transition-all cursor-pointer backdrop-blur-xs"
-        >
-          <ArrowLeft className="w-4 h-4 text-sky-300" />
-          <span>กลับหน้าแรก</span>
-        </button>
-      </aside>
     </div>
   );
 };
