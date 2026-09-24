@@ -577,10 +577,10 @@ export default function App() {
   const handleRecordPayment = async (paymentData: Omit<Payment, 'id' | 'createdAt'>) => {
     try {
       const result = recordPayment(paymentData, invoices, payments);
-      setInvoices(result.updatedInvoices);
-      setPayments(result.updatedPayments);
       await saveInvoices(result.updatedInvoices);
       await savePayments(result.updatedPayments);
+      setInvoices(result.updatedInvoices);
+      setPayments(result.updatedPayments);
 
       // If fully paid, also update the job status to 'Paid'
       const inv = result.updatedInvoices.find((i) => i.id === paymentData.invoiceId);
@@ -594,6 +594,7 @@ export default function App() {
         title: 'Payment Recorded',
         subtitle: `฿${paymentData.amount.toLocaleString()} via ${paymentData.paymentMethod}`,
       });
+      return result.newPayment;
     } catch (err: any) {
       console.error('Record payment error:', err);
       alert(err?.message || 'Payment recording failed.');
@@ -611,6 +612,7 @@ export default function App() {
         .reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100,
     } : job));
     setToastMessage({title: 'Material advance recorded', subtitle: `฿${data.amount.toLocaleString()} for the new job`});
+    return updated[0];
   };
 
   const handleApplyAdvance = async (paymentId: string, invoiceId: string) => {
@@ -658,6 +660,39 @@ export default function App() {
       const target = jobsList.find((item) => item.id === jobId);
       if (target) handleCreateInvoiceForJob(target);
     }
+  };
+
+  const handleMollyReviewedTransfer = async (transfer: {target: string; amount: number; reference: string; date: string; reason: string}, file: File): Promise<Payment> => {
+    const attachment = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Could not save the transfer evidence.'));
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsDataURL(file);
+    });
+    const [kind, id] = transfer.target.split(':');
+    const slip = {id: crypto.randomUUID(), fileName: file.name, imageDataUrl: attachment,
+      amount: transfer.amount, reference: transfer.reference.trim()};
+    if (kind === 'advance') {
+      const target = jobsList.find((item) => item.id === id);
+      if (!target) throw new Error('Choose a valid new job.');
+      return handleRecordAdvance({jobId: target.id, customerId: target.customerId || target.clientId,
+        amount: transfer.amount, paymentMethod: 'Bank Transfer', reference: transfer.reference, date: transfer.date,
+        notes: `Molly suggestion reviewed: ${transfer.reason}`, slips: [slip]});
+    }
+    const invoice = invoices.find((item) => item.id === id);
+    if (kind !== 'invoice' || !invoice || transfer.amount > invoice.balanceDue) throw new Error('Choose an invoice with sufficient balance.');
+    let remaining = Math.round(transfer.amount * 100) / 100;
+    const allocations = invoice.items.flatMap((item, index) => {
+      const used = payments.filter((p) => p.invoiceId === invoice.id).flatMap((p) => p.allocations || [])
+        .filter((line) => line.itemIndex === index).reduce((sum, line) => sum + line.amount, 0);
+      const amount = Math.min(remaining, Math.max(0, Math.round((item.amount - used) * 100) / 100));
+      remaining = Math.round((remaining - amount) * 100) / 100;
+      return amount > 0 ? [{itemIndex: index, description: item.description, amount}] : [];
+    });
+    if (remaining > 0) allocations.push({itemIndex: -1, description: 'Invoice balance adjustment', amount: remaining});
+    return handleRecordPayment({invoiceId: invoice.id, jobId: invoice.jobId, customerId: invoice.customerId,
+      amount: transfer.amount, paymentMethod: 'Bank Transfer', reference: transfer.reference, date: transfer.date,
+      notes: `Molly suggestion reviewed: ${transfer.reason}`, slips: [slip], allocations});
   };
 
   const handleRestoreAllData = async (payload: {
@@ -1805,6 +1840,7 @@ export default function App() {
               onOpenRecordPayment={handleOpenRecordPayment}
               onOpenCreateInvoice={() => {setActiveTab('jobs'); setToastMessage({title: 'Choose a job', subtitle: 'Open the job to create its invoice'});}}
               onApplyAdvance={handleApplyAdvance}
+              onRecordMollyTransfer={handleMollyReviewedTransfer}
             />
           )}
 
