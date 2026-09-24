@@ -289,6 +289,8 @@ export interface QuotationData {
   promptPayId?: string;
   depositPercent?: number; // e.g. 50
   separateTermsPage?: boolean;
+  /** Version 2 means the page layout was explicitly chosen after the inline-terms default. */
+  termsLayoutVersion?: 2;
 }
 
 export interface InspectionJob {
