@@ -27,6 +27,7 @@ import {
   Property,
 } from '../types';
 import { PaymentReceiptModal } from './PaymentReceiptModal';
+import { MollyPaymentEvidenceModal } from './MollyPaymentEvidenceModal';
 
 interface MoneyViewProps {
   invoices: Invoice[];
@@ -42,6 +43,7 @@ interface MoneyViewProps {
   onSelectJob: (jobId: string) => void;
   onSelectCustomer: (customerId: string) => void;
   onApplyAdvance: (paymentId: string, invoiceId: string) => Promise<void>;
+  onRecordMollyTransfer: (transfer: {target: string; amount: number; reference: string; date: string; reason: string}, file: File) => Promise<Payment>;
 }
 
 type DateRangeFilter = 'this_month' | 'last_month' | 'this_year' | 'all';
@@ -61,11 +63,13 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
   onSelectJob,
   onSelectCustomer,
   onApplyAdvance,
+  onRecordMollyTransfer,
 }) => {
   const [rangeFilter, setRangeFilter] = useState<DateRangeFilter>('all');
   const [activeTab, setActiveTab] = useState<MoneyTab>('invoices');
   const [searchTerm, setSearchTerm] = useState('');
   const [receiptPayment, setReceiptPayment] = useState<Payment | null>(null);
+  const [mollyEvidenceOpen, setMollyEvidenceOpen] = useState(false);
 
   // Date filtering logic
   const now = new Date();
@@ -199,6 +203,10 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          <button type="button" onClick={() => setMollyEvidenceOpen(true)}
+            className="flex-1 md:flex-none bg-white text-blue-900 font-black text-xs sm:text-sm px-3.5 py-2 rounded-xl">
+            Molly · อ่าน Invoice / สลิป
+          </button>
           <button
             onClick={() => onOpenRecordPayment()}
             className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm px-3.5 py-2 rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer"
@@ -754,6 +762,9 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
         invoice={invoices.find((inv) => inv.id === receiptPayment.invoiceId || inv.id === receiptPayment.appliedInvoiceId)}
         customer={customers.find((c) => c.id === receiptPayment.customerId)}
         onClose={() => setReceiptPayment(null)} />}
+      {mollyEvidenceOpen && <MollyPaymentEvidenceModal invoices={invoices} jobs={jobs} payments={payments}
+        onRecord={onRecordMollyTransfer} onShowReceipt={(payment) => setReceiptPayment(payment)}
+        onClose={() => setMollyEvidenceOpen(false)} />}
     </div>
   );
 };
