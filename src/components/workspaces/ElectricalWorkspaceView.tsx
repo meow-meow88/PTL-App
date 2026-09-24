@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Zap,
   CheckCircle2,
@@ -30,6 +30,14 @@ import {
   ArrowRight,
   DollarSign,
   Layers,
+  Mic,
+  MicOff,
+  Trash2,
+  Edit3,
+  Image as ImageIcon,
+  RotateCcw,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
 import {
   InspectionJob,
@@ -38,9 +46,15 @@ import {
   Expense,
   ElectricalAssessmentData,
   EvidencePhoto,
+  InspectionItem,
+  FindingStatus,
 } from '../../types';
 import { useLanguage } from '../../i18n/translations';
-import { generateMrBigElectricalAssessment } from '../../utils/mrBigLocalAnalyzer';
+import {
+  generateMrBigElectricalAssessment,
+  analyzeFindingLocally,
+  translateZoneToEnglish,
+} from '../../utils/mrBigLocalAnalyzer';
 import { shareJobToTechnician } from '../../utils/technicianShare';
 
 interface ElectricalWorkspaceViewProps {
@@ -107,6 +121,375 @@ export const ElectricalWorkspaceView: React.FC<ElectricalWorkspaceViewProps> = (
   const [newFindingCategory, setNewFindingCategory] = useState<'finding' | 'observed' | 'test'>('finding');
   const [newFindingText, setNewFindingText] = useState('');
   const fieldPhotoInputRef = React.useRef<HTMLInputElement>(null);
+
+  // V1-style Upgraded Field Finding States
+  const [findingCategory, setFindingCategory] = useState<string>('ELECTRICAL & LIGHTING AUDIT');
+  const [findingZone, setFindingZone] = useState<string>('');
+  const [findingTh, setFindingTh] = useState<string>('');
+  const [findingEn, setFindingEn] = useState<string>('');
+  const [findingStatus, setFindingStatus] = useState<FindingStatus>('Power Tripped');
+  const [findingActionTh, setFindingActionTh] = useState<string>('');
+  const [findingActionEn, setFindingActionEn] = useState<string>('');
+  const [findingPhotoUrl, setFindingPhotoUrl] = useState<string>('');
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+
+  const [isListening, setIsListening] = useState<boolean>(false);
+  const [speechSupported, setSpeechSupported] = useState<boolean>(true);
+  const [isAnalyzingAi, setIsAnalyzingAi] = useState<boolean>(false);
+  const [showCategoryChips, setShowCategoryChips] = useState<boolean>(false);
+
+  const recognitionRef = useRef<any>(null);
+  const findingCameraInputRef = useRef<HTMLInputElement>(null);
+  const findingGalleryInputRef = useRef<HTMLInputElement>(null);
+
+  // Speech Recognition Hook
+  useEffect(() => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setSpeechSupported(false);
+      return;
+    }
+
+    try {
+      const recognizer = new SpeechRecognition();
+      recognizer.continuous = false;
+      recognizer.interimResults = false;
+      recognizer.lang = 'th-TH';
+
+      recognizer.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript.trim()) {
+          setFindingTh((prev) => (prev ? `${prev} ${transcript.trim()}` : transcript.trim()));
+          triggerSmartAnalysis(transcript.trim());
+        }
+        setIsListening(false);
+      };
+
+      recognizer.onerror = () => {
+        setIsListening(false);
+      };
+
+      recognizer.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognizer;
+    } catch {
+      setSpeechSupported(false);
+    }
+  }, []);
+
+  const toggleVoiceRecording = () => {
+    if (!speechSupported || !recognitionRef.current) {
+      setShareFeedback(isTh ? 'เบราว์เซอร์ไม่รองรับการพิมพ์ด้วยเสียง' : 'Voice input not supported in this browser');
+      setTimeout(() => setShareFeedback(null), 3000);
+      return;
+    }
+
+    if (isListening) {
+      try {
+        recognitionRef.current.stop();
+      } catch (err) {}
+      setIsListening(false);
+    } else {
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch (err) {
+        setIsListening(false);
+      }
+    }
+  };
+
+  const triggerSmartAnalysis = (textOverride?: string) => {
+    const textToAnalyze = textOverride || findingTh;
+    if (!textToAnalyze.trim()) {
+      setShareFeedback(isTh ? 'กรุณาพิมพ์หรือพูดสิ่งที่พบก่อนให้ Molly วิเคราะห์' : 'Please provide Thai text before running analysis');
+      setTimeout(() => setShareFeedback(null), 3000);
+      return;
+    }
+
+    setIsAnalyzingAi(true);
+    try {
+      const analyzed = analyzeFindingLocally(
+        textToAnalyze,
+        findingZone || job.villaName || 'ตู้ไฟ MDB',
+        findingCategory || 'ELECTRICAL & LIGHTING AUDIT'
+      );
+
+      if (analyzed) {
+        if (!findingEn || textOverride) setFindingEn(analyzed.observationEn);
+        if (!findingActionTh || textOverride) setFindingActionTh(analyzed.recommendedActionTh);
+        if (!findingActionEn || textOverride) setFindingActionEn(analyzed.recommendedActionEn);
+        if (analyzed.suggestedStatus) setFindingStatus(analyzed.suggestedStatus as FindingStatus);
+      }
+
+      // Auto detect location/zone if empty
+      if (!findingZone.trim()) {
+        const lower = textToAnalyze.toLowerCase();
+        if (lower.includes('เครื่องทำน้ำอุ่น') || lower.includes('ห้องน้ำ')) {
+          setFindingZone('ห้องน้ำ / เครื่องทำน้ำอุ่น');
+        } else if (lower.includes('mdb') || lower.includes('ตู้ไฟ') || lower.includes('เบรกเกอร์') || lower.includes('คัตเอาท์')) {
+          setFindingZone('ตู้ไฟ MDB / Main Breaker');
+        } else if (lower.includes('เต้ารับ') || lower.includes('ปลั๊ก')) {
+          setFindingZone('เต้ารับปลั๊กไฟ');
+        } else if (lower.includes('สวิตช์') || lower.includes('หลอดไฟ') || lower.includes('โคม')) {
+          setFindingZone('สวิตช์ไฟ / โคมไฟ');
+        } else if (lower.includes('ทางเข้า') || lower.includes('สวน') || lower.includes('นอกบ้าน')) {
+          setFindingZone('ไฟทางเข้า / สวนนอกบ้าน');
+        }
+      }
+
+      setShareFeedback(isTh ? '✨ Molly วิเคราะห์และแปลภาษาอังกฤษให้เรียบร้อยแล้ว' : '✨ Molly analyzed & generated English observation');
+      setTimeout(() => setShareFeedback(null), 3500);
+    } catch (err) {
+      console.warn('Analysis error:', err);
+    } finally {
+      setIsAnalyzingAi(false);
+    }
+  };
+
+  const SMART_ELECTRICAL_PRESETS = [
+    {
+      title: '⚡️ RCBO ทริป (เครื่องทำน้ำอุ่น)',
+      category: 'ELECTRICAL & LIGHTING AUDIT',
+      zone: 'ห้องน้ำ / ตู้ไฟ MDB',
+      findingTh: 'พบเบรกเกอร์ป้องกันไฟรั่ว/ลัดวงจร RCBO ทริปตัดวงจรเมื่อเปิดใช้งานเครื่องทำน้ำอุ่น',
+      findingEn: 'RCBO breaker trips immediately when water heater is energized, indicating an earth leakage fault or internal element degradation.',
+      status: 'Power Tripped' as FindingStatus,
+      actionTh: 'ตรวจวัดความเป็นฉนวนสายไฟ (Megger Test) กราวด์ และตรวจเช็กเปลี่ยนเบรกเกอร์ RCBO แท้มาตรฐาน',
+      actionEn: 'Perform Megger insulation test, verify earth ground loop, and replace RCBO breaker unit.',
+    },
+    {
+      title: '🔌 เต้ารับไหม้ / ละลาย',
+      category: 'ELECTRICAL & LIGHTING AUDIT',
+      zone: 'เต้ารับปลั๊กไฟ ผนังห้อง',
+      findingTh: 'เต้ารับไฟฟ้ามีรอยไหม้เกรียม ความร้อนสะสม ขั้วเสียบหลวม เสี่ยงต่อการเกิดประกายไฟ',
+      findingEn: 'Wall electrical outlet shows severe heat damage and loose internal contact terminals.',
+      status: 'Critical Swap' as FindingStatus,
+      actionTh: 'ตัดไฟ ปลดสาย ตรวจเช็กปลายสายไหม้ และเปลี่ยนเต้ารับกราวด์คู่มาตรฐาน มอก. ใหม่',
+      actionEn: 'De-energize circuit, trim damaged wiring, and install new safety ground duplex outlet.',
+    },
+    {
+      title: '💡 สวิตช์ไฟเสีย / สปาร์ค',
+      category: 'ELECTRICAL & LIGHTING AUDIT',
+      zone: 'สวิตช์ไฟหน้างาน',
+      findingTh: 'สวิตช์ไฟกดแล้วไม่ติด มีเสียงสปาร์คภายในบล็อกสวิตช์ สปริงกลไกชำรุด',
+      findingEn: 'Lighting switch failing to latch with audible electrical contact arcing inside enclosure.',
+      status: 'Requires Swap' as FindingStatus,
+      actionTh: 'เปลี่ยนกลไกบล็อกสวิตช์ไฟใหม่ 1 ชุด และตรวจสอบขันแน่นขั้วต่อ',
+      actionEn: 'Replace switch mechanism module and verify terminal torque.',
+    },
+    {
+      title: '⚡️ เมน MDB คัตเอาท์ตัด',
+      category: 'ELECTRICAL & LIGHTING AUDIT',
+      zone: 'ตู้ไฟ MDB / Main Breaker',
+      findingTh: 'เมนเบรกเกอร์ตู้ MDB ทริปดับทั้งวิลล่าเมื่อมีโหลดใช้งานพร้อมกัน โหลดไม่สมดุล',
+      findingEn: 'Main MDB circuit breaker trips under combined peak villa load; phase current balance audit required.',
+      status: 'Power Tripped' as FindingStatus,
+      actionTh: 'วัดกระแสโหลดแต่ละเฟส (Phase Load Balancing) ขันแน่นบัสบาร์ และจัดสรรโหลดวงจรย่อยใหม่',
+      actionEn: 'Measure individual phase load currents, torque busbar connections, and redistribute branch circuits.',
+    },
+    {
+      title: '🚿 ไฟดูดอ่อนๆ / สายดินหลุด',
+      category: 'ELECTRICAL & LIGHTING AUDIT',
+      zone: 'ห้องน้ำ / เครื่องสุขภัณฑ์',
+      findingTh: 'สัมผัสโครงโลหะ/ก๊อกน้ำแล้วรู้สึกไฟดูดอ่อนๆ (Floating Earth Voltage) สายดินหลักหลุดหรือความต้านทานสูง',
+      findingEn: 'Mild electric tingling sensation on metal fixtures; grounding electrode disconnected or high earth loop impedance.',
+      status: 'Power Tripped' as FindingStatus,
+      actionTh: 'ตรวจวัดความต้านทานหลักดิน (< 5 โอห์ม) และต่อสายดิน Equipotential Bonding',
+      actionEn: 'Inspect grounding electrode rod, verify resistance < 5 Ohms, and bond fixtures to earth ground.',
+    },
+    {
+      title: '✅ ตรวจสอบระบบผ่านปกติ',
+      category: 'ELECTRICAL & LIGHTING AUDIT',
+      zone: 'ระบบไฟฟ้าและแสงสว่างโดยรวม',
+      findingTh: 'ตรวจเช็กแรงดันไฟฟ้า 230V ปกติ การขันแน่นขั้วสาย และทดสอบการทำงานของอุปกรณ์ผ่านเกณฑ์ความปลอดภัย',
+      findingEn: 'Complete electrical check completed: voltage 230V stable, terminals properly torqued, all safety circuits passed inspection.',
+      status: 'Normal' as FindingStatus,
+      actionTh: 'บันทึกประวัติการตรวจเช็กและกำหนดรอบตรวจบำรุงรักษาประจำไตรมาส',
+      actionEn: 'Record inspection log and schedule quarterly preventive maintenance.',
+    },
+  ];
+
+  const handleApplyPreset = (preset: typeof SMART_ELECTRICAL_PRESETS[0]) => {
+    setFindingCategory(preset.category);
+    setFindingZone(preset.zone);
+    setFindingTh(preset.findingTh);
+    setFindingEn(preset.findingEn);
+    setFindingStatus(preset.status);
+    setFindingActionTh(preset.actionTh);
+    setFindingActionEn(preset.actionEn);
+    setShareFeedback(isTh ? `✓ เลือกพรีเซ็ต: ${preset.title}` : `✓ Applied preset: ${preset.title}`);
+    setTimeout(() => setShareFeedback(null), 2500);
+  };
+
+  const handleSaveCurrentFinding = () => {
+    if (!findingTh.trim() && !findingEn.trim()) {
+      setShareFeedback(isTh ? 'กรุณาระบุรายละเอียดสิ่งที่พบก่อนบันทึก' : 'Please provide observation details');
+      setTimeout(() => setShareFeedback(null), 3000);
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const finalZone = findingZone.trim() || 'พื้นที่หน้างาน';
+    const finalCat = findingCategory.trim() || 'ELECTRICAL & LIGHTING AUDIT';
+
+    onUpdateJob((prev) => {
+      let updatedItems: InspectionItem[];
+      if (editingItemId) {
+        updatedItems = (prev.items || []).map((it) =>
+          it.id === editingItemId
+            ? {
+                ...it,
+                category: finalCat,
+                locationZone: finalZone,
+                observationTh: findingTh.trim(),
+                observationEn: findingEn.trim() || translateZoneToEnglish(findingTh.trim()),
+                status: findingStatus,
+                recommendedActionTh: findingActionTh.trim(),
+                recommendedActionEn: findingActionEn.trim(),
+                imageUrl: findingPhotoUrl || it.imageUrl,
+              }
+            : it
+        );
+      } else {
+        const newItem: InspectionItem = {
+          id: `INSP-${Date.now()}`,
+          category: finalCat,
+          locationZone: finalZone,
+          title: findingTh.trim().slice(0, 50),
+          fileReference: `IMG_${Math.floor(1000 + Math.random() * 9000)}.jpg`,
+          observationTh: findingTh.trim(),
+          observationEn: findingEn.trim() || translateZoneToEnglish(findingTh.trim()),
+          status: findingStatus,
+          recommendedActionTh: findingActionTh.trim(),
+          recommendedActionEn: findingActionEn.trim(),
+          imageUrl: findingPhotoUrl || undefined,
+          createdAt: now,
+        };
+        updatedItems = [...(prev.items || []), newItem];
+      }
+
+      const summaryList = updatedItems
+        .map((it, idx) => `${idx + 1}. [${it.status}] ${it.locationZone}: ${it.observationTh || it.observationEn}`)
+        .join('\n');
+
+      return {
+        ...prev,
+        items: updatedItems,
+        confirmedFindings: summaryList,
+        observedFact: summaryList,
+        electricalAssessment: prev.electricalAssessment
+          ? {
+              ...prev.electricalAssessment,
+              confirmedFinding: summaryList,
+              observedFact: summaryList,
+              hasAssessmentStarted: true,
+            }
+          : undefined,
+      };
+    });
+
+    // Reset form
+    setEditingItemId(null);
+    setFindingTh('');
+    setFindingEn('');
+    setFindingZone('');
+    setFindingActionTh('');
+    setFindingActionEn('');
+    setFindingPhotoUrl('');
+    setFindingStatus('Power Tripped');
+
+    setShareFeedback(isTh ? '✓ บันทึกรายการตรวจพบเรียบร้อยแล้ว' : '✓ Finding saved successfully');
+    setTimeout(() => setShareFeedback(null), 3500);
+  };
+
+  const handleCancelFindingForm = () => {
+    setEditingItemId(null);
+    setFindingTh('');
+    setFindingEn('');
+    setFindingZone('');
+    setFindingActionTh('');
+    setFindingActionEn('');
+    setFindingPhotoUrl('');
+    setFindingStatus('Power Tripped');
+  };
+
+  const handleEditFinding = (item: InspectionItem) => {
+    setEditingItemId(item.id);
+    setFindingCategory(item.category || 'ELECTRICAL & LIGHTING AUDIT');
+    setFindingZone(item.locationZone || '');
+    setFindingTh(item.observationTh || item.title || '');
+    setFindingEn(item.observationEn || '');
+    setFindingStatus(item.status || 'Power Tripped');
+    setFindingActionTh(item.recommendedActionTh || '');
+    setFindingActionEn(item.recommendedActionEn || '');
+    setFindingPhotoUrl(item.imageUrl || '');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDeleteFinding = (itemId: string) => {
+    onUpdateJob((prev) => {
+      const updatedItems = (prev.items || []).filter((it) => it.id !== itemId);
+      const summaryList = updatedItems
+        .map((it, idx) => `${idx + 1}. [${it.status}] ${it.locationZone}: ${it.observationTh || it.observationEn}`)
+        .join('\n');
+      return {
+        ...prev,
+        items: updatedItems,
+        confirmedFindings: summaryList,
+        observedFact: summaryList,
+        electricalAssessment: prev.electricalAssessment
+          ? {
+              ...prev.electricalAssessment,
+              confirmedFinding: summaryList,
+              observedFact: summaryList,
+            }
+          : undefined,
+      };
+    });
+    setShareFeedback(isTh ? 'ลบรายการตรวจพบเรียบร้อยแล้ว' : 'Finding deleted');
+    setTimeout(() => setShareFeedback(null), 3000);
+  };
+
+  const handlePhotoSelectForFinding = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingPhoto(true);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setFindingPhotoUrl(dataUrl);
+      setIsUploadingPhoto(false);
+
+      const newPhoto: EvidencePhoto = {
+        id: `ev-${Date.now()}`,
+        jobId: job.id,
+        photoUrl: dataUrl,
+        caption: findingTh ? `${findingZone || 'หน้างาน'}: ${findingTh.slice(0, 30)}` : 'รูปหน้างานตรวจเช็ก',
+        capturedAt: new Date().toISOString(),
+      };
+      onUpdateJob((prev) => ({
+        ...prev,
+        evidencePhotos: [...(prev.evidencePhotos || []), newPhoto],
+      }));
+    };
+    reader.onerror = () => {
+      setIsUploadingPhoto(false);
+      setShareFeedback(isTh ? 'อ่านรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' : 'Failed to read photo');
+    };
+    try {
+      reader.readAsDataURL(file);
+    } catch {
+      setIsUploadingPhoto(false);
+    }
+  };
 
   const hasSufficientFieldFactsForCases = Boolean(
     job.scopeConfirmed ||
@@ -303,92 +686,677 @@ export const ElectricalWorkspaceView: React.FC<ElectricalWorkspaceViewProps> = (
   };
 
   if (fieldScreenMode === 'simple') {
+    const CATEGORY_OPTIONS = [
+      'ELECTRICAL & LIGHTING AUDIT',
+      'MDB & CIRCUIT PROTECTION',
+      'AIR CONDITIONING & HVAC',
+      'SMART HOME SYSTEM DIAGNOSTICS',
+      'PLUMBING & SANITARY',
+    ];
+
+    const ZONE_OPTIONS = [
+      'ตู้ไฟ MDB / Main Breaker',
+      'ห้องน้ำ / เครื่องทำน้ำอุ่น',
+      'สวิตช์ไฟ / โคมไฟ',
+      'เต้ารับปลั๊กไฟ',
+      'ไฟทางเข้า / สวนนอกบ้าน',
+      'ห้องนอน 1 / Master',
+      'ห้องนั่งเล่น / Living Room',
+    ];
+
+    const STATUS_GRID_OPTIONS: { label: FindingStatus; th: string; activeClasses: string; inactiveClasses: string }[] = [
+      {
+        label: 'Power Tripped',
+        th: 'ไฟตัด / ลัดวงจร',
+        activeClasses: 'border-red-500 bg-red-50 text-red-700 ring-2 ring-red-400 font-bold',
+        inactiveClasses: 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+      },
+      {
+        label: 'Not Working',
+        th: 'ไม่ทำงาน',
+        activeClasses: 'border-amber-500 bg-amber-50 text-amber-800 ring-2 ring-amber-400 font-bold',
+        inactiveClasses: 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+      },
+      {
+        label: 'Requires Swap',
+        th: 'ต้องเปลี่ยนอะไหล่',
+        activeClasses: 'border-blue-500 bg-blue-50 text-blue-800 ring-2 ring-blue-400 font-bold',
+        inactiveClasses: 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+      },
+      {
+        label: 'Disconnected',
+        th: 'หลุดจากระบบ',
+        activeClasses: 'border-slate-500 bg-slate-100 text-slate-800 ring-2 ring-slate-400 font-bold',
+        inactiveClasses: 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+      },
+      {
+        label: 'Critical Swap',
+        th: 'ต้องเปลี่ยนด่วน (วิกฤต)',
+        activeClasses: 'border-rose-600 bg-rose-50 text-rose-800 ring-2 ring-rose-500 font-bold',
+        inactiveClasses: 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+      },
+      {
+        label: 'Normal',
+        th: 'ปกติ / ตรวจแล้วผ่าน',
+        activeClasses: 'border-emerald-500 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-400 font-bold',
+        inactiveClasses: 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+      },
+    ];
+
+    const currentItems = job.items || [];
+
     return (
-      <div className="max-w-2xl mx-auto pb-24">
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm space-y-5">
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
-              <span className="rounded-full bg-blue-50 px-2.5 py-1 text-blue-800">
-                {job.jobPurpose === 'REPLACEMENT'
-                  ? (isTh ? 'เปลี่ยนอุปกรณ์' : 'Replacement')
-                  : job.jobPurpose === 'INSTALLATION'
-                    ? (isTh ? 'ติดตั้ง' : 'Installation')
-                    : (isTh ? 'ตรวจเช็กไฟฟ้า' : 'Electrical inspection')}
-              </span>
-              <span>{job.scopeConfirmed
-                ? (isTh ? 'บันทึกผลตรวจแล้ว' : 'Scope confirmed')
-                : (isTh ? 'กำลังตรวจหน้างาน' : 'On site')}</span>
-            </div>
-            <h1 className="text-xl font-bold text-slate-950">{job.villaName || job.propertyLocation}</h1>
-            <p className="text-sm text-slate-600">{job.customerName}
-              {job.scheduledTime ? ` · ${job.scheduledTime}` : ''}
-            </p>
-          </div>
-
-          <div className="rounded-xl bg-amber-50 px-4 py-3 border border-amber-100">
-            <p className="text-xs font-bold text-amber-900 mb-1">{isTh ? 'ลูกค้าแจ้ง' : 'Reported by customer'}</p>
-            <p className="text-sm text-slate-800 leading-relaxed">
-              {job.requestDescription || job.notes || (isTh ? 'ยังไม่มีรายละเอียด' : 'No description yet')}
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="field-note" className="block text-sm font-bold text-slate-900">
-              {isTh ? 'พบอะไรที่หน้างาน?' : 'What did you observe on site?'}
-            </label>
-            <textarea
-              id="field-note"
-              rows={4}
-              value={fieldNote}
-              onChange={(event) => setFieldNote(event.target.value)}
-              onBlur={() => {
-                if (fieldNote.trim() && fieldNote.trim() !== (assessment.observedFact || '').trim()) handleSaveFieldNote();
-              }}
-              placeholder={isTh
-                ? 'จดเฉพาะสิ่งที่เห็นหรือทดสอบจริง เช่น เบรกเกอร์ย่อยหมายเลข 1 ทริป'
-                : 'Record only what you saw or tested, e.g. sub-breaker 1 tripped'}
-              className="w-full rounded-xl border border-slate-300 bg-white p-3 text-base text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 resize-y"
-            />
-            <p className="text-xs text-slate-500">
-              {isTh ? 'ข้อสันนิษฐานและราคาซ่อมค่อยระบุหลังตรวจยืนยัน' : 'Add causes and repair pricing after the inspection.'}
-            </p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-2">
-            <button type="button" onClick={handleSaveFieldNote} disabled={!fieldNote.trim()}
-              className="min-h-12 flex-1 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:opacity-50">
-              {isTh ? 'บันทึกสิ่งที่พบ' : 'Save observation'}
-            </button>
-            <button type="button" onClick={() => fieldPhotoInputRef.current?.click()} disabled={isUploadingPhoto}
-              className="min-h-12 flex-1 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-900 flex items-center justify-center gap-2 disabled:opacity-50">
-              <Camera className="h-4 w-4" />
-              {isUploadingPhoto ? (isTh ? 'กำลังบันทึกรูป…' : 'Saving photo…') : (isTh ? 'ถ่ายรูป / เลือกรูป' : 'Take / choose photo')}
-            </button>
-            <input type="file" ref={fieldPhotoInputRef} onChange={handlePhotoUpload}
-              accept="image/*" capture="environment" className="hidden" />
-          </div>
-
-          {shareFeedback && <p role="status" className="rounded-lg bg-emerald-50 p-2.5 text-xs font-semibold text-emerald-800">{shareFeedback}</p>}
-          {!!job.evidencePhotos?.length && (
-            <div className="space-y-2">
-              <p className="text-xs font-bold text-slate-600">
-                {isTh ? `รูปหน้างาน ${job.evidencePhotos.length} รูป` : `Site photos: ${job.evidencePhotos.length}`}
+      <div className="max-w-3xl mx-auto pb-28 space-y-5">
+        {/* ========================================================================= */}
+        {/* 1. TOP HEADER & CUSTOMER REPORT CARD */}
+        {/* ========================================================================= */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
+                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-blue-800 border border-blue-100 flex items-center gap-1">
+                  <Zap className="h-3 w-3 text-blue-600" />
+                  {job.jobPurpose === 'REPLACEMENT'
+                    ? (isTh ? 'เปลี่ยนอุปกรณ์' : 'Replacement')
+                    : job.jobPurpose === 'INSTALLATION'
+                      ? (isTh ? 'ติดตั้งระบบไฟฟ้า' : 'Installation')
+                      : (isTh ? 'ตรวจเช็กไฟฟ้า' : 'Electrical Inspection')}
+                </span>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-medium border ${
+                  job.scopeConfirmed
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : 'bg-amber-50 text-amber-800 border-amber-200'
+                }`}>
+                  {job.scopeConfirmed
+                    ? (isTh ? '✓ บันทึกผลตรวจแล้ว' : '✓ Inspection saved')
+                    : (isTh ? '⚡️ กำลังตรวจหน้างาน (v1 Pro)' : '⚡️ Inspecting on site')}
+                </span>
+              </div>
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-950 flex items-center gap-2">
+                <span>{job.villaName || job.propertyLocation}</span>
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-600">
+                <span className="font-semibold text-slate-800">{job.customerName}</span>
+                {job.scheduledTime ? ` · ${job.scheduledTime}` : ''}
+                {job.propertyLocation && job.propertyLocation !== job.villaName ? ` · ${job.propertyLocation}` : ''}
               </p>
-              <div className="flex gap-2 overflow-x-auto">
-                {job.evidencePhotos.map((photo, index) => (
-                  <img key={photo.id || index} src={photo.photoUrl}
-                    alt={photo.caption || (isTh ? 'รูปหน้างาน' : 'Site photo')}
-                    className="h-16 w-16 shrink-0 rounded-lg border border-slate-200 object-cover" />
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-center">
+              <button
+                type="button"
+                onClick={() => setFieldScreenMode('full')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                title={isTh ? 'สลับไปดูตาราง Case A / Case B เชิงลึก' : 'View full technical diagnostic'}
+              >
+                <Layers className="h-3.5 w-3.5 text-slate-500" />
+                <span>{isTh ? 'โหมดเทคนิคเชิงลึก' : 'Technical view'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Customer request note */}
+          <div className="rounded-xl bg-amber-50/80 px-4 py-3 border border-amber-200/70">
+            <p className="text-xs font-bold text-amber-900 mb-0.5 flex items-center gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-700" />
+              <span>{isTh ? 'ลูกค้าแจ้งอาการ / ปัญหา' : 'Customer reported issue'}</span>
+            </p>
+            <p className="text-sm text-slate-800 leading-relaxed font-medium">
+              {job.requestDescription || job.notes || (isTh ? 'ตรวจเช็กระบบไฟฟ้าและแสงสว่างทั่วไป' : 'General electrical audit')}
+            </p>
+          </div>
+        </section>
+
+        {/* Feedback Alert banner */}
+        {shareFeedback && (
+          <div role="status" className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm font-semibold text-emerald-900 flex items-center gap-2 shadow-xs transition-all">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+            <span>{shareFeedback}</span>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* 2. THE V1-STYLE UPGRADED INSPECTION FINDING FORM (Exact Match to v1 flow) */}
+        {/* ========================================================================= */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm space-y-5">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+                {editingItemId ? <Edit3 className="h-4 w-4" /> : <Plus className="h-5 w-5" />}
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-slate-950">
+                  {editingItemId
+                    ? (isTh ? 'แก้ไขรายการที่ตรวจพบ' : 'Edit Finding')
+                    : (isTh ? 'เพิ่มรายการที่ตรวจพบ' : 'Add Finding')}
+                </h2>
+                <p className="text-xs text-slate-500">
+                  {isTh ? 'บันทึกอาการหน้างาน ถ่ายรูป และให้ Molly ช่วยสรุปผล' : 'Record observation with photo & AI assistance'}
+                </p>
+              </div>
+            </div>
+
+            {editingItemId && (
+              <button
+                type="button"
+                onClick={handleCancelFindingForm}
+                className="text-xs font-semibold text-rose-600 hover:text-rose-800 px-2.5 py-1 rounded-md bg-rose-50 border border-rose-100"
+              >
+                {isTh ? 'ยกเลิกการแก้ไข' : 'Cancel edit'}
+              </button>
+            )}
+          </div>
+
+          {/* 1. ถ่ายรูป / เลือกรูป */}
+          <div className="space-y-2">
+            <div
+              onClick={() => findingCameraInputRef.current?.click()}
+              className="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center cursor-pointer hover:border-blue-400 bg-slate-50/60 hover:bg-blue-50/30 transition-all flex flex-col items-center justify-center gap-1.5"
+            >
+              {findingPhotoUrl ? (
+                <div className="relative group w-full flex flex-col items-center">
+                  <img
+                    src={findingPhotoUrl}
+                    alt="Finding evidence"
+                    className="h-36 w-auto max-w-full rounded-lg object-contain border border-slate-200 shadow-xs"
+                  />
+                  <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-slate-600">
+                    <span className="text-blue-600 hover:underline">แตะเพื่อเปลี่ยนรูป</span>
+                    <span>·</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFindingPhotoUrl('');
+                      }}
+                      className="text-rose-600 hover:underline"
+                    >
+                      ลบรูป
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="h-10 w-10 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 shadow-2xs">
+                    <Camera className="h-5 w-5 text-slate-700" />
+                  </div>
+                  <span className="text-sm font-bold text-slate-800">
+                    {isUploadingPhoto
+                      ? (isTh ? 'กำลังอัปโหลดรูป...' : 'Uploading photo...')
+                      : (isTh ? 'ถ่ายรูป / เลือกรูป' : 'Take photo / Upload')}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {isTh ? 'แตะเปิดกล้องถ่าย หรือเลือกจากคลังภาพ' : 'Tap to capture or choose from gallery'}
+                  </span>
+                </>
+              )}
+            </div>
+
+            {/* Hidden file inputs */}
+            <input
+              ref={findingCameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handlePhotoSelectForFinding}
+              className="hidden"
+            />
+            <input
+              ref={findingGalleryInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handlePhotoSelectForFinding}
+              className="hidden"
+            />
+
+            {!findingPhotoUrl && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => findingGalleryInputRef.current?.click()}
+                  className="text-xs font-semibold text-slate-600 hover:text-blue-700 flex items-center gap-1"
+                >
+                  <Upload className="h-3 w-3" />
+                  <span>{isTh ? 'เลือกจากคลังรูปภาพ' : 'Choose from photo library'}</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 2. หมวดหมู่ */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+              {isTh ? 'หมวดหมู่' : 'Category'}
+            </label>
+            <input
+              type="text"
+              value={findingCategory}
+              onChange={(e) => setFindingCategory(e.target.value)}
+              placeholder="เช่น ELECTRICAL & LIGHTING AUDIT"
+              className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-900 focus:border-blue-500 focus:outline-hidden focus:ring-2 focus:ring-blue-100"
+            />
+            {/* Category Quick Chips */}
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {CATEGORY_OPTIONS.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setFindingCategory(cat)}
+                  className={`text-2xs px-2.5 py-1 rounded-full border transition-all ${
+                    findingCategory === cat
+                      ? 'bg-blue-50 text-blue-800 border-blue-300 font-semibold'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 3. ตำแหน่ง / จุดที่พบ */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+              {isTh ? 'ตำแหน่ง / จุดที่พบ' : 'Location / Zone'}
+            </label>
+            <input
+              type="text"
+              value={findingZone}
+              onChange={(e) => setFindingZone(e.target.value)}
+              placeholder={isTh ? 'เช่น ห้องนอน 4, ทางขึ้นชั้น 2, ตู้ MDB' : 'e.g. Master Bedroom, MDB Panel'}
+              className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-900 focus:border-blue-500 focus:outline-hidden focus:ring-2 focus:ring-blue-100"
+            />
+            {/* Zone Quick Chips */}
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {ZONE_OPTIONS.map((z) => (
+                <button
+                  key={z}
+                  type="button"
+                  onClick={() => setFindingZone(z)}
+                  className={`text-2xs px-2.5 py-1 rounded-full border transition-all ${
+                    findingZone === z
+                      ? 'bg-amber-50 text-amber-900 border-amber-300 font-semibold'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {z}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 4. รายละเอียดสิ่งที่พบ (พูดหรือพิมพ์เป็นภาษาไทย) */}
+          <div className="space-y-2">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                {isTh ? 'รายละเอียดสิ่งที่พบ (พูดหรือพิมพ์เป็นภาษาไทย)' : 'Observation (Thai Voice or Text)'}
+              </label>
+
+              {/* Working Mic Button matching v1 styling */}
+              <button
+                type="button"
+                onClick={toggleVoiceRecording}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                  isListening
+                    ? 'bg-red-600 text-white animate-pulse ring-2 ring-red-400'
+                    : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
+                }`}
+                title={isTh ? 'แตะไมค์แล้วพูดอธิบายเป็นภาษาไทย' : 'Speak to record'}
+              >
+                {isListening ? (
+                  <>
+                    <MicOff className="h-3.5 w-3.5" />
+                    <span>กำลังฟังเสียง... แตะเพื่อหยุด</span>
+                  </>
+                ) : (
+                  <>
+                    <Mic className="h-3.5 w-3.5 text-blue-600" />
+                    <span>กดไมค์แล้วพูดอธิบาย หรือพิมพ์ด้านล่าง</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <textarea
+              rows={3}
+              value={findingTh}
+              onChange={(e) => setFindingTh(e.target.value)}
+              placeholder={isTh
+                ? 'อธิบายสิ่งที่เสียหรือพบปัญหา... เช่น เบรกเกอร์ RCBO เครื่องทำน้ำอุ่นทริปตัดวงจร'
+                : 'Describe what is faulty or broken...'}
+              className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-900 focus:border-blue-500 focus:outline-hidden focus:ring-2 focus:ring-blue-100 resize-y"
+            />
+
+            {/* ⚡️ Smart 1-Tap Electrical Presets (Upgraded from v1 for extreme speed) */}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between">
+                <span className="text-2xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                  <Zap className="h-3 w-3 text-amber-500" />
+                  <span>{isTh ? 'ปุ่มลัดอาการไฟฟ้าหน้างาน (1-Tap กดยิงข้อมูลทันที):' : 'Quick Electrical Presets:'}</span>
+                </span>
+                {findingTh && (
+                  <button
+                    type="button"
+                    onClick={() => triggerSmartAnalysis()}
+                    disabled={isAnalyzingAi}
+                    className="text-xs font-semibold text-purple-700 hover:text-purple-900 flex items-center gap-1 bg-purple-50 hover:bg-purple-100 px-2.5 py-1 rounded-md border border-purple-200 transition-colors"
+                  >
+                    {isAnalyzingAi ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin text-purple-600" />
+                        <span>กำลังวิเคราะห์...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-3 w-3 text-purple-600" />
+                        <span>✨ ให้ Molly ช่วยแปล & สรุปผล</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {SMART_ELECTRICAL_PRESETS.map((preset) => (
+                  <button
+                    key={preset.title}
+                    type="button"
+                    onClick={() => handleApplyPreset(preset)}
+                    className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-900 text-slate-700 font-medium transition-all text-left flex items-center gap-1 shadow-2xs"
+                  >
+                    {preset.title}
+                  </button>
                 ))}
               </div>
             </div>
-          )}
+          </div>
 
-          <button type="button" onClick={() => setFieldScreenMode('full')}
-            className="w-full border-t border-slate-100 pt-4 text-left text-sm font-semibold text-blue-700 flex items-center justify-between">
-            <span>{isTh ? 'ดูรายละเอียดงานและขั้นตอนถัดไป' : 'Job details and next steps'}</span>
-            <ChevronRight className="h-4 w-4" />
-          </button>
+          {/* 5. รายละเอียด (English) */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                {isTh
+                  ? 'รายละเอียด (English) — ไม่บังคับ ใส่ถ้าต้องการเอกสาร EN/TH ครบ'
+                  : 'Observation (English) — Optional'}
+              </label>
+              {!findingEn && findingTh && (
+                <button
+                  type="button"
+                  onClick={() => triggerSmartAnalysis()}
+                  className="text-2xs font-semibold text-blue-700 hover:underline"
+                >
+                  {isTh ? 'คลิกให้แปลอัตโนมัติ' : 'Auto-translate'}
+                </button>
+              )}
+            </div>
+            <input
+              type="text"
+              value={findingEn}
+              onChange={(e) => setFindingEn(e.target.value)}
+              placeholder="e.g. Toilet water heater RCBO breaker trips upon activation"
+              className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-900 focus:border-blue-500 focus:outline-hidden focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+
+          {/* 6. สถานะ (The 6 Status Buttons matching IMG_4012.png) */}
+          <div className="space-y-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+              {isTh ? 'สถานะ' : 'Status'}
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {STATUS_GRID_OPTIONS.map((opt) => {
+                const isSelected = findingStatus === opt.label;
+                return (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    onClick={() => setFindingStatus(opt.label)}
+                    className={`rounded-xl border p-2.5 text-left transition-all relative ${
+                      isSelected ? opt.activeClasses : opt.inactiveClasses
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <p className="text-xs font-bold leading-tight">{opt.label}</p>
+                      {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                    </div>
+                    <p className="text-2xs mt-0.5 opacity-80">{opt.th}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 7. แนะนำการแก้ไข (ไทย, ถ้ามี) */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+              {isTh ? 'แนะนำการแก้ไข (ไทย, ถ้ามี)' : 'Recommended Action (Thai)'}
+            </label>
+            <input
+              type="text"
+              value={findingActionTh}
+              onChange={(e) => setFindingActionTh(e.target.value)}
+              placeholder="เช่น ตรวจวัด Megger Test และเปลี่ยนเบรกเกอร์ RCBO แท้ มอก."
+              className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-900 focus:border-blue-500 focus:outline-hidden focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+
+          {/* 8. แนะนำการแก้ไข (English) */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+              {isTh ? 'แนะนำการแก้ไข (English) — ไม่บังคับ' : 'Recommended Action (English)'}
+            </label>
+            <input
+              type="text"
+              value={findingActionEn}
+              onChange={(e) => setFindingActionEn(e.target.value)}
+              placeholder="e.g. Conduct insulation test and replace RCBO breaker unit"
+              className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-900 focus:border-blue-500 focus:outline-hidden focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+
+          {/* Action Buttons matching IMG_4012.png */}
+          <div className="flex flex-row items-center gap-3 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={handleCancelFindingForm}
+              className="flex-1 rounded-xl border border-slate-300 bg-white py-3 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors text-center"
+            >
+              {isTh ? 'ยกเลิก' : 'Cancel'}
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveCurrentFinding}
+              className="flex-1 rounded-xl bg-[#102a4e] hover:bg-[#0b1c34] text-white py-3 px-4 text-sm font-bold shadow-md transition-all flex items-center justify-center gap-2"
+            >
+              <Check className="h-4 w-4" />
+              <span>{editingItemId ? (isTh ? 'อัปเดตรายการ' : 'Update Finding') : (isTh ? 'บันทึกรายการ' : 'Save Finding')}</span>
+            </button>
+          </div>
+        </section>
+
+        {/* ========================================================================= */}
+        {/* 3. RECORDED FINDINGS LIST (รายการที่ตรวจพบแล้ว) */}
+        {/* ========================================================================= */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="h-6 w-6 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold">
+                {currentItems.length}
+              </span>
+              <h3 className="text-base font-bold text-slate-950">
+                {isTh ? 'รายการที่ตรวจพบแล้วในงานนี้' : 'Recorded Findings'}
+              </h3>
+            </div>
+            {currentItems.length > 0 && (
+              <span className="text-xs text-slate-500 font-medium">
+                {isTh ? `ทั้งหมด ${currentItems.length} จุด` : `${currentItems.length} items`}
+              </span>
+            )}
+          </div>
+
+          {currentItems.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-6 text-center text-slate-500 space-y-2">
+              <Zap className="h-7 w-7 text-slate-400 mx-auto" />
+              <p className="text-sm font-semibold text-slate-700">
+                {isTh ? 'ยังไม่มีรายการตรวจพบที่บันทึก' : 'No findings recorded yet'}
+              </p>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                {isTh
+                  ? 'คุณสามารถใช้ปุ่มลัด 1-Tap ด้านบน หรือกดไมค์พูดอธิบาย แล้วกด "บันทึกรายการ" ได้เลย'
+                  : 'Use the quick presets above or speak into the microphone to record findings.'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {currentItems.map((item, idx) => {
+                const statusMeta = STATUS_GRID_OPTIONS.find((s) => s.label === item.status);
+                return (
+                  <div
+                    key={item.id || idx}
+                    className="rounded-xl border border-slate-200 bg-white p-3.5 sm:p-4 shadow-2xs hover:border-slate-300 transition-all space-y-2.5"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold text-slate-500">#{idx + 1}</span>
+                        <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold border ${
+                          item.status === 'Power Tripped' || item.status === 'Critical Swap'
+                            ? 'bg-rose-50 text-rose-800 border-rose-200'
+                            : item.status === 'Normal'
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : 'bg-blue-50 text-blue-800 border-blue-200'
+                        }`}>
+                          {item.status} {statusMeta ? `· ${statusMeta.th}` : ''}
+                        </span>
+                        <span className="text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
+                          {item.locationZone || 'หน้างาน'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleEditFinding(item)}
+                          className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title={isTh ? 'แก้ไขรายการนี้' : 'Edit'}
+                        >
+                          <Edit3 className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteFinding(item.id)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                          title={isTh ? 'ลบรายการนี้' : 'Delete'}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      {item.imageUrl && (
+                        <img
+                          src={item.imageUrl}
+                          alt={item.title || 'Finding photo'}
+                          className="h-20 w-20 rounded-lg object-cover border border-slate-200 shrink-0"
+                        />
+                      )}
+                      <div className="space-y-1 flex-1">
+                        <p className="text-sm font-bold text-slate-900 leading-snug">
+                          {item.observationTh || item.title}
+                        </p>
+                        {item.observationEn && item.observationEn !== item.observationTh && (
+                          <p className="text-xs text-slate-500 leading-snug italic">
+                            {item.observationEn}
+                          </p>
+                        )}
+                        {(item.recommendedActionTh || item.recommendedActionEn) && (
+                          <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex items-start gap-1.5 text-xs text-slate-700">
+                            <Wrench className="h-3.5 w-3.5 text-blue-600 shrink-0 mt-0.5" />
+                            <span>
+                              <strong className="text-slate-900 font-semibold">{isTh ? 'แนวทางแก้ไข: ' : 'Action: '}</strong>
+                              {item.recommendedActionTh || item.recommendedActionEn}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* ========================================================================= */}
+        {/* 4. SMART NEXT STEPS & MOLLY QUOTATION BRIDGE */}
+        {/* ========================================================================= */}
+        <section className="rounded-2xl border border-blue-200 bg-linear-to-br from-blue-50/70 via-indigo-50/50 to-white p-4 sm:p-5 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-blue-600" />
+              <h3 className="text-sm font-bold text-blue-950">
+                {isTh ? 'ขั้นตอนถัดไปหลังตรวจหน้างาน' : 'Next Steps'}
+              </h3>
+            </div>
+            {currentItems.length > 0 && (
+              <span className="text-xs font-bold text-blue-800 bg-blue-100/70 px-2.5 py-0.5 rounded-full">
+                {currentItems.length} รายการพร้อมทำราคา
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenQuotation) {
+                  onOpenQuotation(job.id, 'edit');
+                } else {
+                  onOpenQuickEstimate();
+                }
+              }}
+              className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white p-3 text-left font-bold text-sm shadow-xs transition-all flex items-center justify-between group"
+            >
+              <div className="space-y-0.5">
+                <span className="block flex items-center gap-1.5">
+                  <Sparkles className="h-4 w-4 text-amber-300" />
+                  <span>{isTh ? 'ให้ Molly ทำใบเสนอราคาซ่อม' : 'Generate Quotation'}</span>
+                </span>
+                <span className="block text-2xs text-blue-100 font-normal">
+                  {isTh ? 'คำนวณค่าอะไหล่และค่าแรงอัตโนมัติ' : 'Auto-calculate parts & labor'}
+                </span>
+              </div>
+              <ChevronRight className="h-5 w-5 text-blue-200 group-hover:translate-x-0.5 transition-transform" />
+            </button>
+
+            <button
+              type="button"
+              onClick={onOpenReport}
+              className="rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 p-3 text-left font-bold text-sm shadow-xs transition-all flex items-center justify-between group"
+            >
+              <div className="space-y-0.5">
+                <span className="block flex items-center gap-1.5">
+                  <FileText className="h-4 w-4 text-slate-600" />
+                  <span>{isTh ? 'ดูรายงานผลการตรวจหน้างาน' : 'View Inspection Report'}</span>
+                </span>
+                <span className="block text-2xs text-slate-500 font-normal">
+                  {isTh ? 'พิมพ์หรือส่งสรุปรายงานให้ลูกค้า' : 'Export or share with customer'}
+                </span>
+              </div>
+              <ChevronRight className="h-5 w-5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+            </button>
+          </div>
+
+          <div className="pt-2 text-center">
+            <button
+              type="button"
+              onClick={() => setFieldScreenMode('full')}
+              className="text-xs font-semibold text-slate-600 hover:text-blue-700 inline-flex items-center gap-1"
+            >
+              <span>{isTh ? 'สลับไปดูตารางวิเคราะห์เทคนิคเชิงลึก (Case A / Case B)' : 'Switch to detailed technical analysis'}</span>
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </section>
       </div>
     );

@@ -32,6 +32,7 @@ interface MollyExpressQuoteModalProps {
   onClose: () => void;
   onCreateJobAndOpenQuotation: (newJob: InspectionJob) => void;
   existingJobsCount: number;
+  onSwitchToReceipt?: () => void;
 }
 
 interface ExpressQuoteResult {
@@ -140,6 +141,7 @@ export const MollyExpressQuoteModal: React.FC<MollyExpressQuoteModalProps> = ({
   onClose,
   onCreateJobAndOpenQuotation,
   existingJobsCount,
+  onSwitchToReceipt,
 }) => {
   const [activeTab, setActiveTab] = useState<'chat' | 'form'>('chat');
   const [inputText, setInputText] = useState('');
@@ -413,6 +415,15 @@ export const MollyExpressQuoteModal: React.FC<MollyExpressQuoteModalProps> = ({
             >
               <span>⚡ กรอกฟอร์มด่วน 1 นาที</span>
             </button>
+            {onSwitchToReceipt && (
+              <button
+                type="button"
+                onClick={onSwitchToReceipt}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-black text-emerald-800 bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
+              >
+                <span>🧾 สลิป &amp; ออกใบเสร็จด่วน</span>
+              </button>
+            )}
           </div>
 
           <div className="text-[11px] text-slate-500 hidden sm:flex items-center gap-1">

@@ -521,6 +521,9 @@ export interface Payment {
   invoiceId: string; // Linked to Invoice.id
   jobId: string; // Linked to InspectionJob.id
   customerId: string; // Linked to Customer.id
+  customerName?: string; // Optional custom/override customer name
+  customerPhone?: string; // Optional contact info
+  customerAddress?: string; // Optional customer address or property
   date: string; // YYYY-MM-DD
   amount: number;
   paymentMethod: PaymentMethod;

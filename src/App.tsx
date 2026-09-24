@@ -43,6 +43,8 @@ import { CompanyDashboard } from './components/CompanyDashboard';
 import { VarvaraSocialModal } from './components/VarvaraSocialModal';
 import { MollyHardwareModal } from './components/MollyHardwareModal';
 import { MollyExpressQuoteModal } from './components/MollyExpressQuoteModal';
+import { MollyExpressReceiptModal } from './components/MollyExpressReceiptModal';
+import { PaymentReceiptModal } from './components/PaymentReceiptModal';
 import { MobileGuideModal } from './components/MobileGuideModal';
 import { GoogleDriveModal } from './components/GoogleDriveModal';
 import { BackupRestoreModal } from './components/BackupRestoreModal';
@@ -105,7 +107,7 @@ import {
 } from './utils/operationsStorage';
 import { initialVendorsSeed, initialRecurringServicesSeed } from './data/operationsSeedData';
 import { generateAutomatedFollowUps } from './utils/followUpEngine';
-import { Expense, Invoice, Payment } from './types';
+import { Expense, Invoice, Payment, PaymentMethod } from './types';
 import {
   safeGetLocalStorage,
   safeSetLocalStorage,
@@ -513,6 +515,8 @@ export default function App() {
   const [isVarvaraSocialOpen, setIsVarvaraSocialOpen] = useState(false);
   const [isMollyHardwareOpen, setIsMollyHardwareOpen] = useState(false);
   const [isMollyExpressOpen, setIsMollyExpressOpen] = useState(false);
+  const [mollyExpressTab, setMollyExpressTab] = useState<'quote' | 'receipt'>('quote');
+  const [receiptForViewing, setReceiptForViewing] = useState<Payment | null>(null);
   const [isMobileGuideOpen, setIsMobileGuideOpen] = useState(false);
   const [isGoogleDriveModalOpen, setIsGoogleDriveModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ title: string; subtitle?: string } | null>(null);
@@ -614,6 +618,119 @@ export default function App() {
     } : job));
     setToastMessage({title: 'Material advance recorded', subtitle: `฿${data.amount.toLocaleString()} for the new job`});
     return updated[0];
+  };
+
+  const handleRecordExpressReceipt = async (data: {
+    customerId: string;
+    customerName?: string;
+    customerPhone?: string;
+    customerAddress?: string;
+    amount: number;
+    date: string;
+    paymentMethod: PaymentMethod;
+    reference?: string;
+    notes?: string;
+    allocations: Array<{ description: string; amount: number; invoiceId?: string; jobId?: string }>;
+    slips: Array<{ id: string; fileName: string; imageDataUrl: string; amount: number; reference?: string }>;
+  }): Promise<Payment> => {
+    const paymentDate = data.date || new Date().toISOString().slice(0, 10);
+    const receiptNumber = `PTL-RC-${paymentDate.replace(/-/g, '')}-${Date.now().toString().slice(-6)}`;
+
+    const newPayment: Payment = {
+      id: `PAY-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+      invoiceId: data.allocations.find((a) => a.invoiceId)?.invoiceId || '',
+      jobId: data.allocations.find((a) => a.jobId)?.jobId || '',
+      customerId: data.customerId,
+      customerName: data.customerName?.trim() || undefined,
+      customerPhone: data.customerPhone?.trim() || undefined,
+      customerAddress: data.customerAddress?.trim() || undefined,
+      date: paymentDate,
+      amount: data.amount,
+      paymentMethod: data.paymentMethod || 'Bank Transfer',
+      reference: data.reference?.trim() || '',
+      notes: data.notes?.trim() || '',
+      slips: data.slips || [],
+      allocations: data.allocations.map((a, idx) => ({
+        itemIndex: idx,
+        description: a.description,
+        amount: a.amount,
+      })),
+      receiptNumber,
+      createdAt: new Date().toISOString(),
+    };
+
+    const nextPayments = [newPayment, ...payments];
+    setPayments(nextPayments);
+    await savePayments(nextPayments);
+
+    // If allocations match any invoice, update that invoice
+    const invMap = new Map<string, number>();
+    data.allocations.forEach((a) => {
+      if (a.invoiceId) {
+        invMap.set(a.invoiceId, (invMap.get(a.invoiceId) || 0) + a.amount);
+      }
+    });
+
+    if (invMap.size > 0) {
+      setInvoices((prev) => {
+        const nextInvoices = prev.map((inv) => {
+          const allocAmt = invMap.get(inv.id);
+          if (!allocAmt) return inv;
+          const newAmountPaid = (inv.amountPaid || 0) + allocAmt;
+          const newBalance = Math.max(0, inv.total - newAmountPaid);
+          const newStatus = newBalance <= 0 ? 'Paid' : 'Partially Paid';
+          return {
+            ...inv,
+            amountPaid: newAmountPaid,
+            balanceDue: newBalance,
+            status: newStatus as any,
+          };
+        });
+        saveInvoices(nextInvoices);
+        return nextInvoices;
+      });
+    }
+
+    // If allocations match any job deposit, update that job
+    const jobMap = new Map<string, number>();
+    data.allocations.forEach((a) => {
+      if (a.jobId) {
+        jobMap.set(a.jobId, (jobMap.get(a.jobId) || 0) + a.amount);
+      }
+    });
+
+    if (jobMap.size > 0) {
+      setJobsList((prev) => {
+        const nextJobs = prev.map((job) => {
+          const depositAmt = jobMap.get(job.id);
+          if (!depositAmt) return job;
+          return {
+            ...job,
+            materialDepositReceived: (job.materialDepositReceived || 0) + depositAmt,
+            updatedAt: new Date().toISOString(),
+          };
+        });
+        return nextJobs;
+      });
+    }
+
+    setToastMessage({
+      title: 'ออกใบเสร็จรับเงินสำเร็จ',
+      subtitle: `${receiptNumber} · ฿${data.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+    });
+
+    return newPayment;
+  };
+
+  const handleUpdatePayment = async (updatedPayment: Payment) => {
+    const nextPayments = payments.map((p) => (p.id === updatedPayment.id ? updatedPayment : p));
+    setPayments(nextPayments);
+    await savePayments(nextPayments);
+    setReceiptForViewing(updatedPayment);
+    setToastMessage({
+      title: 'อัปเดตข้อมูลใบเสร็จเรียบร้อย',
+      subtitle: `บันทึกข้อมูลลูกค้า ${updatedPayment.customerName || updatedPayment.customerId} แล้ว`,
+    });
   };
 
   const handleApplyAdvance = async (paymentId: string, invoiceId: string) => {
@@ -1583,12 +1700,35 @@ export default function App() {
             }}
           />
         )}
-        {isMollyExpressOpen && (
+        {isMollyExpressOpen && mollyExpressTab === 'quote' && (
           <MollyExpressQuoteModal
             isOpen={isMollyExpressOpen}
             onClose={() => setIsMollyExpressOpen(false)}
             onCreateJobAndOpenQuotation={handleCreateExpressQuoteJob}
             existingJobsCount={jobsList.length}
+            onSwitchToReceipt={() => setMollyExpressTab('receipt')}
+          />
+        )}
+        {isMollyExpressOpen && mollyExpressTab === 'receipt' && (
+          <MollyExpressReceiptModal
+            isOpen={isMollyExpressOpen}
+            onClose={() => setIsMollyExpressOpen(false)}
+            invoices={invoices}
+            jobs={jobsList}
+            customers={customers}
+            payments={payments}
+            onRecordExpressReceipt={handleRecordExpressReceipt}
+            onShowReceipt={(p) => setReceiptForViewing(p)}
+            onSwitchToQuotation={() => setMollyExpressTab('quote')}
+          />
+        )}
+        {receiptForViewing && (
+          <PaymentReceiptModal
+            payment={receiptForViewing}
+            invoice={invoices.find((inv) => inv.id === receiptForViewing.invoiceId || inv.id === receiptForViewing.appliedInvoiceId)}
+            customer={customers.find((c) => c.id === receiptForViewing.customerId)}
+            onClose={() => setReceiptForViewing(null)}
+            onUpdatePayment={handleUpdatePayment}
           />
         )}
       </>
@@ -1718,6 +1858,10 @@ export default function App() {
                       : j
                   )
                 );
+              }}
+              onOpenMollyExpress={(tab) => {
+                setMollyExpressTab(tab || 'quote');
+                setIsMollyExpressOpen(true);
               }}
             />
           )}
@@ -1967,12 +2111,35 @@ export default function App() {
           />
         )}
 
-        {isMollyExpressOpen && (
+        {isMollyExpressOpen && mollyExpressTab === 'quote' && (
           <MollyExpressQuoteModal
             isOpen={isMollyExpressOpen}
             onClose={() => setIsMollyExpressOpen(false)}
             onCreateJobAndOpenQuotation={handleCreateExpressQuoteJob}
             existingJobsCount={jobsList.length}
+            onSwitchToReceipt={() => setMollyExpressTab('receipt')}
+          />
+        )}
+        {isMollyExpressOpen && mollyExpressTab === 'receipt' && (
+          <MollyExpressReceiptModal
+            isOpen={isMollyExpressOpen}
+            onClose={() => setIsMollyExpressOpen(false)}
+            invoices={invoices}
+            jobs={jobsList}
+            customers={customers}
+            payments={payments}
+            onRecordExpressReceipt={handleRecordExpressReceipt}
+            onShowReceipt={(p) => setReceiptForViewing(p)}
+            onSwitchToQuotation={() => setMollyExpressTab('quote')}
+          />
+        )}
+        {receiptForViewing && (
+          <PaymentReceiptModal
+            payment={receiptForViewing}
+            invoice={invoices.find((inv) => inv.id === receiptForViewing.invoiceId || inv.id === receiptForViewing.appliedInvoiceId)}
+            customer={customers.find((c) => c.id === receiptForViewing.customerId)}
+            onClose={() => setReceiptForViewing(null)}
+            onUpdatePayment={handleUpdatePayment}
           />
         )}
 
@@ -2344,7 +2511,7 @@ export default function App() {
           </span>
           <div className="text-left leading-tight hidden xs:block sm:block">
             <div className="text-xs font-black tracking-wide text-white drop-shadow-xs">คุยกับ Molly</div>
-            <div className="text-[10px] text-amber-100 font-semibold">ออกใบเสนอราคาด่วน</div>
+            <div className="text-[10px] text-amber-100 font-semibold">งานด่วน &amp; ใบเสร็จ</div>
           </div>
           <span className="flex h-2.5 w-2.5 relative ml-0.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
@@ -2353,13 +2520,36 @@ export default function App() {
         </button>
       </div>}
 
-      {/* Molly Express Quotation Copilot Modal */}
-      {isMollyExpressOpen && (
+      {/* Molly Express Quotation & Receipt Modals */}
+      {isMollyExpressOpen && mollyExpressTab === 'quote' && (
         <MollyExpressQuoteModal
           isOpen={isMollyExpressOpen}
           onClose={() => setIsMollyExpressOpen(false)}
           onCreateJobAndOpenQuotation={handleCreateExpressQuoteJob}
           existingJobsCount={jobsList.length}
+          onSwitchToReceipt={() => setMollyExpressTab('receipt')}
+        />
+      )}
+      {isMollyExpressOpen && mollyExpressTab === 'receipt' && (
+        <MollyExpressReceiptModal
+          isOpen={isMollyExpressOpen}
+          onClose={() => setIsMollyExpressOpen(false)}
+          invoices={invoices}
+          jobs={jobsList}
+          customers={customers}
+          payments={payments}
+          onRecordExpressReceipt={handleRecordExpressReceipt}
+          onShowReceipt={(p) => setReceiptForViewing(p)}
+          onSwitchToQuotation={() => setMollyExpressTab('quote')}
+        />
+      )}
+      {receiptForViewing && (
+        <PaymentReceiptModal
+          payment={receiptForViewing}
+          invoice={invoices.find((inv) => inv.id === receiptForViewing.invoiceId || inv.id === receiptForViewing.appliedInvoiceId)}
+          customer={customers.find((c) => c.id === receiptForViewing.customerId)}
+          onClose={() => setReceiptForViewing(null)}
+          onUpdatePayment={handleUpdatePayment}
         />
       )}
 

@@ -60,6 +60,7 @@ interface MyDayViewProps {
   onCustomerApprove?: (jobId: string) => void;
   onFinishFieldWork?: (jobId: string) => void;
   onOpenFinancialJob?: (jobId: string, purpose: 'invoice' | 'advance') => void;
+  onOpenMollyExpress?: (initialTab?: 'quote' | 'receipt') => void;
 }
 
 export const MyDayView: React.FC<MyDayViewProps> = ({
@@ -87,6 +88,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
   onCustomerApprove,
   onFinishFieldWork,
   onOpenFinancialJob,
+  onOpenMollyExpress,
 }) => {
   const { lang, t } = useLanguage();
   const isTh = lang === 'th';
@@ -205,17 +207,29 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
           </p>
         </div>
 
-        {/* FAST ACTION BUTTONS: [ ⚡ URGENT JOB ] and [ + NEW JOB ] */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* FAST ACTION BUTTONS: [ MOLLY EXPRESS ], [ URGENT JOB ] and [ + NEW JOB ] */}
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-2 w-full sm:w-auto sm:flex sm:items-center shrink-0">
+          {onOpenMollyExpress && (
+            <button
+              id="my-day-btn-molly-express"
+              type="button"
+              onClick={() => onOpenMollyExpress('quote')}
+              className="min-h-[44px] px-1 xs:px-2 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 active:scale-98 text-white font-extrabold text-[11px] xs:text-xs sm:text-sm shadow-md shadow-orange-600/25 flex items-center justify-center gap-1 sm:gap-1.5 transition-all cursor-pointer text-center"
+            >
+              <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-200 fill-amber-200 shrink-0" />
+              <span className="truncate">{isTh ? 'งานด่วน Molly' : 'Molly Quick'}</span>
+            </button>
+          )}
+
           {onOpenUrgentJob && (
             <button
               id="my-day-btn-urgent-job"
               type="button"
               onClick={onOpenUrgentJob}
-              className="min-h-[44px] px-3.5 sm:px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 active:scale-98 text-white font-extrabold text-xs sm:text-sm shadow-md shadow-red-600/20 flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 whitespace-nowrap"
+              className="min-h-[44px] px-1 xs:px-2 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-red-600 hover:bg-red-500 active:scale-98 text-white font-extrabold text-[11px] xs:text-xs sm:text-sm shadow-md shadow-red-600/20 flex items-center justify-center gap-1 sm:gap-1.5 transition-all cursor-pointer text-center"
             >
-              <Zap className="w-4 h-4 text-amber-300 fill-amber-300 shrink-0" />
-              <span>{isTh ? '⚡ งานด่วน' : '⚡ Urgent Job'}</span>
+              <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300 fill-amber-300 shrink-0" />
+              <span className="truncate">{isTh ? 'งานด่วน' : 'Urgent'}</span>
             </button>
           )}
 
@@ -224,13 +238,63 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
             id="my-day-btn-new-job"
             type="button"
             onClick={onOpenQuickJob}
-            className="min-h-[44px] px-4 sm:px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-98 text-white font-black text-xs sm:text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer ring-2 ring-blue-400/40 shrink-0 whitespace-nowrap"
+            className="min-h-[44px] px-1 xs:px-2 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-98 text-white font-black text-[11px] xs:text-xs sm:text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-1 sm:gap-1.5 transition-all cursor-pointer ring-2 ring-blue-400/40 text-center"
           >
-            <Plus className="w-4 h-4 sm:w-5 sm:h-5 stroke-[3] shrink-0" />
-            <span>{t.actions.newJob}</span>
+            <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[3] shrink-0" />
+            <span className="truncate">{isTh ? 'เพิ่มงาน' : t.actions.newJob}</span>
           </button>
         </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* MOLLY EXPRESS QUICK ACTIONS BANNER */}
+      {/* ========================================================================= */}
+      {onOpenMollyExpress && (
+        <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 rounded-2xl p-4 sm:p-5 text-white shadow-md shadow-orange-600/15 flex flex-col md:flex-row md:items-center justify-between gap-3.5">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0 text-amber-100 shadow-inner">
+              <Sparkles className="w-5 h-5 fill-amber-200 text-amber-200" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm sm:text-base font-black tracking-tight text-white truncate">
+                  {isTh ? 'Molly Express · ผู้ช่วยงานด่วนหน้างาน' : 'Molly Express · Field Quick Copilot'}
+                </h2>
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-white/25 text-white shrink-0">
+                  PTL V2
+                </span>
+              </div>
+              <p className="text-xs text-amber-100/90 font-medium truncate mt-0.5">
+                {isTh
+                  ? 'ออกใบเสนอราคาด่วน หรือ อัพโหลดสลิป & รูปใบเสนอราคาเพื่อออกใบเสร็จรับเงินทันที'
+                  : 'Fast quote generation or upload slips & quotes to issue receipts instantly'}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 xs:grid-cols-2 gap-2 w-full md:w-auto shrink-0">
+            <button
+              id="my-day-molly-express-quote-btn"
+              type="button"
+              onClick={() => onOpenMollyExpress('quote')}
+              className="w-full sm:w-auto min-h-[40px] px-3 sm:px-4 py-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-98 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer backdrop-blur-xs border border-white/20 text-center"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-200 fill-amber-200 shrink-0" />
+              <span className="truncate">{isTh ? 'ออกใบเสนอราคาด่วน' : 'Quick Quote'}</span>
+            </button>
+
+            <button
+              id="my-day-molly-express-receipt-btn"
+              type="button"
+              onClick={() => onOpenMollyExpress('receipt')}
+              className="w-full sm:w-auto min-h-[40px] px-3 sm:px-4 py-2 rounded-xl bg-white text-orange-950 hover:bg-amber-50 active:scale-98 font-black text-xs shadow-md shadow-black/10 flex items-center justify-center gap-1.5 transition-all cursor-pointer text-center"
+            >
+              <Receipt className="w-4 h-4 text-orange-600 shrink-0" />
+              <span className="truncate">{isTh ? 'สลิป & ออกใบเสร็จด่วน' : 'Express Receipt'}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {remoteJobs.length > 0 && <section className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs">
         <h2 className="text-sm font-extrabold text-slate-900 mb-1">{isTh ? 'อัปเดตงานแต่ละสถานที่' : 'Updates across sites'}</h2>
