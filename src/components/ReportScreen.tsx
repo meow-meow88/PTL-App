@@ -170,14 +170,10 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
   const [isDocPreviewModalOpen, setIsDocPreviewModalOpen] = useState(() => initialAction === 'preview');
   const [previewModalDoc, setPreviewModalDoc] = useState<ActiveDocTab>(initialTab || 'quotation');
 
-  // Quotation Page Layout state (single page vs separate terms page 2)
+  // Older quotations stored the automatic two-page layout. Start those inline too;
+  // preserve only a page split explicitly selected after the layout change.
   const [separateTermsPage, setSeparateTermsPage] = useState<boolean>(() => {
-    if (job.quotation?.separateTermsPage !== undefined) {
-      return job.quotation.separateTermsPage;
-    }
-    const termsCount = job.quotation?.terms?.length || 0;
-    const itemsCount = (job.quotation?.hardwareItems?.length || 0) + (job.quotation?.serviceItems?.length || 0);
-    return termsCount > 2 || itemsCount >= 2;
+    return job.quotation?.termsLayoutVersion === 2 && job.quotation.separateTermsPage === true;
   });
 
   const handleToggleSeparateTermsPage = (val: boolean) => {
@@ -186,6 +182,7 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
       onUpdateQuotation({
         ...job.quotation,
         separateTermsPage: val,
+        termsLayoutVersion: 2,
       });
     }
   };
