@@ -386,6 +386,10 @@ export interface InspectionJob {
   scopeConfirmedAt?: string;
   quoteSentAt?: string;
   customerApprovedAt?: string;
+  inspectionApprovedAt?: string; // Retain approval for the initial diagnostic visit
+  inspectionAppointmentDate?: string; // Preserve the earlier appointment when a repair quote starts
+  inspectionAppointmentTime?: string;
+  repairQuoteDraftedAt?: string;
   fieldWorkCompletedAt?: string;
   quoteType?: 'inspection' | 'repair' | 'standard';
   quotePurpose?: QuotePurpose;
@@ -520,6 +524,11 @@ export interface Payment {
   paymentMethod: PaymentMethod;
   reference?: string; // Transfer slip / check / transaction ref
   notes?: string;
+  slips?: Array<{ id: string; fileName: string; imageDataUrl: string; amount: number; reference?: string }>;
+  allocations?: Array<{ itemIndex: number; description: string; amount: number }>;
+  purpose?: 'invoice' | 'material_advance';
+  appliedInvoiceId?: string; // Advance credited once against the final invoice
+  receiptNumber?: string;
   createdAt: string;
 }
 
@@ -1147,5 +1156,3 @@ export interface GeneralAssistanceData {
   outOfPocketExpensesThb?: number;
   outcomeSummary?: string;
 }
-
-

@@ -17,7 +17,8 @@ import {
   MapPin,
   CheckCircle2,
 } from 'lucide-react';
-import { Customer, Property, InspectionJob } from '../types';
+import { Customer, Property, InspectionJob, JobPurpose } from '../types';
+import { JOB_PURPOSES, suggestJobPurpose } from '../utils/jobPurpose';
 import {
   PTL_SERVICES,
   getWorkflowPresetForService,
@@ -26,8 +27,6 @@ import {
   ServiceDefinition,
 } from '../utils/serviceWorkflow';
 import { useLanguage } from '../i18n/translations';
-import { DateTimeSelector } from './DateTimeSelector';
-import { formatTime24h } from '../utils/dateTime';
 
 interface QuickJobModalProps {
   isOpen: boolean;
@@ -63,6 +62,8 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
 
   // Service selection
   const [selectedServiceId, setSelectedServiceId] = useState<string>('home_watch');
+  const [jobPurpose, setJobPurpose] = useState<JobPurpose>('HOME_WATCH_VISIT');
+  const [purposeCustomized, setPurposeCustomized] = useState(false);
   const [customServiceText, setCustomServiceText] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('all');
 
@@ -70,10 +71,6 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
   const [requestDescription, setRequestDescription] = useState('');
   const [price, setPrice] = useState<string>('1500');
   const [isPriceCustomized, setIsPriceCustomized] = useState<boolean>(false);
-  const [scheduledDate, setScheduledDate] = useState<string>(
-    new Date().toISOString().slice(0, 10)
-  );
-  const [scheduledTime, setScheduledTime] = useState<string>('10:00');
 
   const selectedServiceDef = PTL_SERVICES.find((s) => s.id === selectedServiceId) || PTL_SERVICES[0];
 
@@ -82,13 +79,6 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
     if (isOpen) {
       if (initialUrgency) {
         setUrgency(initialUrgency);
-        if (initialUrgency === 'Urgent') {
-          // Set immediate time for urgent dispatch
-          const now = new Date();
-          const hh = String(now.getHours()).padStart(2, '0');
-          const mm = String(now.getMinutes()).padStart(2, '0');
-          setScheduledTime(`${hh}:${mm}`);
-        }
       }
       if (presetCustomerId) {
         setSelectedCustomerId(presetCustomerId);
@@ -117,6 +107,7 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
 
   const handleSelectService = (service: ServiceDefinition) => {
     setSelectedServiceId(service.id);
+    if (!purposeCustomized) setJobPurpose(suggestJobPurpose(service.id));
     // Price safety: Only set default placeholder price if user has not entered a custom price
     if (!isPriceCustomized) {
       setPrice(String(service.defaultPrice));
@@ -178,16 +169,15 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
           : 'villa_owner',
       propertyLocation: finalLocation,
       serviceType: finalService,
-      status: urgency === 'Urgent' ? 'In Progress' : 'Scheduled',
-      inspectionDate: scheduledDate,
+      jobPurpose,
+      status: urgency === 'Urgent' ? 'In Progress' : 'New',
+      inspectionDate: today.toISOString().slice(0, 10),
       createdAt: today.toISOString(),
       inspector: 'PTL Solo Operator',
       documentRef: `PTL-${dateSlug}`,
       notes: requestDescription,
       requestDescription: requestDescription,
       price: parsedPrice,
-      scheduledDate: scheduledDate,
-      scheduledTime: formatTime24h(scheduledTime) || '10:00',
       waitingOn: 'none',
       isSimpleJob: !isHomeWatch,
       workflowPreset: workflowPreset,
@@ -238,7 +228,7 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
             item: 1,
             description: finalService,
             detail: `${finalService} - ${finalVillaName}`,
-            estimatedSchedule: scheduledDate,
+            estimatedSchedule: 'To be confirmed after approval',
             qty: '1 Job',
             amount: parsedPrice,
           },
@@ -363,6 +353,18 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
                 className="mt-2 w-full px-3 py-1.5 bg-white border border-blue-400 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
               />
             )}
+          </div>
+
+          <div>
+            <label htmlFor="quick-job-purpose" className="block text-xs font-bold text-slate-700 mb-1">
+              {t.quickJob.jobPurpose}
+            </label>
+            <select id="quick-job-purpose" value={jobPurpose} onChange={(e) => {
+              setJobPurpose(e.target.value as JobPurpose);
+              setPurposeCustomized(true);
+            }} className="w-full min-h-[44px] px-3 py-2 text-sm bg-white border border-slate-300 rounded-xl">
+              {JOB_PURPOSES.map((purpose) => <option key={purpose} value={purpose}>{t.jobPurpose[purpose]}</option>)}
+            </select>
           </div>
 
           {/* Urgency Selector */}
@@ -512,14 +514,6 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
               />
             </div>
 
-            {/* Unified DateTimeSelector */}
-            <DateTimeSelector
-              date={scheduledDate}
-              time={scheduledTime}
-              onChangeDate={setScheduledDate}
-              onChangeTime={setScheduledTime}
-              label={lang === 'th' ? 'วันและเวลานัดหมาย' : 'Appointment Date & Time'}
-            />
           </div>
 
           {/* Submit Button */}

@@ -26,6 +26,8 @@ import {
   Customer,
   Property,
 } from '../types';
+import { PaymentReceiptModal } from './PaymentReceiptModal';
+import { MollyPaymentEvidenceModal } from './MollyPaymentEvidenceModal';
 
 interface MoneyViewProps {
   invoices: Invoice[];
@@ -40,6 +42,8 @@ interface MoneyViewProps {
   onSelectInvoice: (invoiceId: string) => void;
   onSelectJob: (jobId: string) => void;
   onSelectCustomer: (customerId: string) => void;
+  onApplyAdvance: (paymentId: string, invoiceId: string) => Promise<void>;
+  onRecordMollyTransfer: (transfer: {target: string; amount: number; reference: string; date: string; reason: string}, file: File) => Promise<Payment>;
 }
 
 type DateRangeFilter = 'this_month' | 'last_month' | 'this_year' | 'all';
@@ -58,10 +62,14 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
   onSelectInvoice,
   onSelectJob,
   onSelectCustomer,
+  onApplyAdvance,
+  onRecordMollyTransfer,
 }) => {
   const [rangeFilter, setRangeFilter] = useState<DateRangeFilter>('all');
   const [activeTab, setActiveTab] = useState<MoneyTab>('invoices');
   const [searchTerm, setSearchTerm] = useState('');
+  const [receiptPayment, setReceiptPayment] = useState<Payment | null>(null);
+  const [mollyEvidenceOpen, setMollyEvidenceOpen] = useState(false);
 
   // Date filtering logic
   const now = new Date();
@@ -195,6 +203,10 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          <button type="button" onClick={() => setMollyEvidenceOpen(true)}
+            className="flex-1 md:flex-none bg-white text-blue-900 font-black text-xs sm:text-sm px-3.5 py-2 rounded-xl">
+            Molly · อ่าน Invoice / สลิป
+          </button>
           <button
             onClick={() => onOpenRecordPayment()}
             className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm px-3.5 py-2 rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer"
@@ -518,12 +530,13 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
                   <th className="py-3 px-4">Reference / Notes</th>
                   <th className="py-3 px-4 text-right">Amount</th>
                   <th className="py-3 px-4 text-center">Invoice</th>
+                  <th className="py-3 px-4 text-center">Receipt</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredPayments.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-400">
+                    <td colSpan={7} className="py-8 text-center text-slate-400">
                       No payments logged in this period.
                     </td>
                   </tr>
@@ -554,16 +567,28 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
                           +฿{p.amount.toLocaleString()}
                         </td>
                         <td className="py-3 px-4 text-center font-mono">
-                          {inv ? (
+                          {p.purpose === 'material_advance' && !p.appliedInvoiceId ? (
+                            <select defaultValue="" aria-label="Credit advance to final invoice" className="max-w-40 p-1 border rounded"
+                              onChange={async (e) => { if (!e.target.value) return; try { await onApplyAdvance(p.id, e.target.value); } catch (error) { alert(error instanceof Error ? error.message : 'Could not apply advance.'); e.target.value = ''; } }}>
+                              <option value="">Apply to final invoice</option>
+                              {invoices.filter((candidate) => candidate.jobId === p.jobId && candidate.customerId === p.customerId && candidate.balanceDue >= p.amount)
+                                .map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.invoiceNumber}</option>)}
+                            </select>
+                          ) : (inv || p.appliedInvoiceId) ? (
                             <button
-                              onClick={() => onSelectInvoice(inv.id)}
+                              onClick={() => onSelectInvoice((inv?.id || p.appliedInvoiceId)!)}
                               className="text-blue-600 hover:underline text-[11px] font-bold"
                             >
-                              {inv.invoiceNumber}
+                              {inv?.invoiceNumber || invoices.find((i) => i.id === p.appliedInvoiceId)?.invoiceNumber}
                             </button>
                           ) : (
                             '—'
                           )}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <button type="button" onClick={() => setReceiptPayment(p)} className="px-2 py-1 rounded-lg bg-blue-50 text-blue-700 font-bold">
+                            Receipt
+                          </button>
                         </td>
                       </tr>
                     );
@@ -733,6 +758,13 @@ export const MoneyView: React.FC<MoneyViewProps> = ({
           </div>
         )}
       </div>
+      {receiptPayment && <PaymentReceiptModal payment={receiptPayment}
+        invoice={invoices.find((inv) => inv.id === receiptPayment.invoiceId || inv.id === receiptPayment.appliedInvoiceId)}
+        customer={customers.find((c) => c.id === receiptPayment.customerId)}
+        onClose={() => setReceiptPayment(null)} />}
+      {mollyEvidenceOpen && <MollyPaymentEvidenceModal invoices={invoices} jobs={jobs} payments={payments}
+        onRecord={onRecordMollyTransfer} onShowReceipt={(payment) => setReceiptPayment(payment)}
+        onClose={() => setMollyEvidenceOpen(false)} />}
     </div>
   );
 };

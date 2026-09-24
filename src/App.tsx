@@ -91,6 +91,8 @@ import {
   savePayments,
   createInvoiceFromJob,
   recordPayment,
+  recordMaterialAdvance,
+  applyMaterialAdvance,
 } from './utils/financeStorage';
 import {
   loadVendors,
@@ -381,6 +383,13 @@ export default function App() {
             setExpenses(loadedExpenses);
             setInvoices(loadedInvoices);
             setPayments(loadedPayments);
+            if (loadedPayments.length) {
+              setJobsList((prev) => prev.map((item) => {
+                const received = Math.round(loadedPayments.filter((payment) => payment.jobId === item.id && payment.purpose === 'material_advance')
+                  .reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100;
+                return received && received !== item.materialDepositReceived ? {...item, materialDepositReceived: received} : item;
+              }));
+            }
           }
         } catch (finErr) {
           console.error('Finance load error:', finErr);
@@ -472,6 +481,7 @@ export default function App() {
 
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedInvoiceIdForPayment, setSelectedInvoiceIdForPayment] = useState<string | null>(null);
+  const [selectedAdvanceJobId, setSelectedAdvanceJobId] = useState<string | null>(null);
 
   const [isQuickJobModalOpen, setIsQuickJobModalOpen] = useState(false);
   const [quickJobPresetCustomer, setQuickJobPresetCustomer] = useState<string | null>(null);
@@ -567,10 +577,10 @@ export default function App() {
   const handleRecordPayment = async (paymentData: Omit<Payment, 'id' | 'createdAt'>) => {
     try {
       const result = recordPayment(paymentData, invoices, payments);
-      setInvoices(result.updatedInvoices);
-      setPayments(result.updatedPayments);
       await saveInvoices(result.updatedInvoices);
       await savePayments(result.updatedPayments);
+      setInvoices(result.updatedInvoices);
+      setPayments(result.updatedPayments);
 
       // If fully paid, also update the job status to 'Paid'
       const inv = result.updatedInvoices.find((i) => i.id === paymentData.invoiceId);
@@ -584,11 +594,34 @@ export default function App() {
         title: 'Payment Recorded',
         subtitle: `฿${paymentData.amount.toLocaleString()} via ${paymentData.paymentMethod}`,
       });
+      return result.newPayment;
     } catch (err: any) {
       console.error('Record payment error:', err);
       alert(err?.message || 'Payment recording failed.');
       throw err;
     }
+  };
+
+  const handleRecordAdvance = async (data: Parameters<typeof recordMaterialAdvance>[0]) => {
+    const updated = recordMaterialAdvance(data, jobsList, payments);
+    await savePayments(updated);
+    setPayments(updated);
+    setJobsList((prev) => prev.map((job) => job.id === data.jobId ? {
+      ...job,
+      materialDepositReceived: Math.round(updated.filter((payment) => payment.jobId === job.id && payment.purpose === 'material_advance')
+        .reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100,
+    } : job));
+    setToastMessage({title: 'Material advance recorded', subtitle: `฿${data.amount.toLocaleString()} for the new job`});
+    return updated[0];
+  };
+
+  const handleApplyAdvance = async (paymentId: string, invoiceId: string) => {
+    const result = applyMaterialAdvance(paymentId, invoiceId, invoices, payments);
+    await saveInvoices(result.updatedInvoices);
+    await savePayments(result.updatedPayments);
+    setInvoices(result.updatedInvoices);
+    setPayments(result.updatedPayments);
+    setToastMessage({title: 'Advance credited', subtitle: 'Final invoice balance updated without recording new cash'});
   };
 
   const handleOpenFinancials = (jobId: string) => {
@@ -608,8 +641,58 @@ export default function App() {
   };
 
   const handleOpenRecordPayment = (invoiceId: string) => {
+    setSelectedAdvanceJobId(null);
     setSelectedInvoiceIdForPayment(invoiceId);
     setIsPaymentModalOpen(true);
+  };
+
+  const handleOpenFinancialJob = (jobId: string, purpose: 'invoice' | 'advance') => {
+    setActiveTab('money');
+    if (purpose === 'advance') {
+      setSelectedAdvanceJobId(jobId);
+      setSelectedInvoiceIdForPayment(null);
+      setIsPaymentModalOpen(true);
+      return;
+    }
+    const invoice = invoices.find((item) => item.jobId === jobId && item.balanceDue > 0);
+    if (invoice) handleOpenRecordPayment(invoice.id);
+    else {
+      const target = jobsList.find((item) => item.id === jobId);
+      if (target) handleCreateInvoiceForJob(target);
+    }
+  };
+
+  const handleMollyReviewedTransfer = async (transfer: {target: string; amount: number; reference: string; date: string; reason: string}, file: File): Promise<Payment> => {
+    const attachment = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Could not save the transfer evidence.'));
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsDataURL(file);
+    });
+    const [kind, id] = transfer.target.split(':');
+    const slip = {id: crypto.randomUUID(), fileName: file.name, imageDataUrl: attachment,
+      amount: transfer.amount, reference: transfer.reference.trim()};
+    if (kind === 'advance') {
+      const target = jobsList.find((item) => item.id === id);
+      if (!target) throw new Error('Choose a valid new job.');
+      return handleRecordAdvance({jobId: target.id, customerId: target.customerId || target.clientId,
+        amount: transfer.amount, paymentMethod: 'Bank Transfer', reference: transfer.reference, date: transfer.date,
+        notes: `Molly suggestion reviewed: ${transfer.reason}`, slips: [slip]});
+    }
+    const invoice = invoices.find((item) => item.id === id);
+    if (kind !== 'invoice' || !invoice || transfer.amount > invoice.balanceDue) throw new Error('Choose an invoice with sufficient balance.');
+    let remaining = Math.round(transfer.amount * 100) / 100;
+    const allocations = invoice.items.flatMap((item, index) => {
+      const used = payments.filter((p) => p.invoiceId === invoice.id).flatMap((p) => p.allocations || [])
+        .filter((line) => line.itemIndex === index).reduce((sum, line) => sum + line.amount, 0);
+      const amount = Math.min(remaining, Math.max(0, Math.round((item.amount - used) * 100) / 100));
+      remaining = Math.round((remaining - amount) * 100) / 100;
+      return amount > 0 ? [{itemIndex: index, description: item.description, amount}] : [];
+    });
+    if (remaining > 0) allocations.push({itemIndex: -1, description: 'Invoice balance adjustment', amount: remaining});
+    return handleRecordPayment({invoiceId: invoice.id, jobId: invoice.jobId, customerId: invoice.customerId,
+      amount: transfer.amount, paymentMethod: 'Bank Transfer', reference: transfer.reference, date: transfer.date,
+      notes: `Molly suggestion reviewed: ${transfer.reason}`, slips: [slip], allocations});
   };
 
   const handleRestoreAllData = async (payload: {
@@ -1457,8 +1540,32 @@ export default function App() {
           initialTab="quotation"
           onBack={() => setViewMode(previousViewMode || 'main')}
           onUpdateQuotation={(updatedQuotation) =>
-            updateCurrentJob((prev) => ({ ...prev, quotation: updatedQuotation }))
+            updateCurrentJob((prev) => ({
+              ...prev,
+              quotation: updatedQuotation,
+              repairQuoteDraftedAt: prev.scopeConfirmedAt &&
+                (!prev.quoteSentAt || prev.quoteSentAt < prev.scopeConfirmedAt)
+                ? new Date().toISOString() : prev.repairQuoteDraftedAt,
+            }))
           }
+          onQuoteSent={() => updateCurrentJob((prev) => {
+            const repairAfterInspection = Boolean(prev.scopeConfirmedAt &&
+              (!prev.quoteSentAt || prev.quoteSentAt < prev.scopeConfirmedAt));
+            return {
+              ...prev,
+              status: 'Waiting Approval',
+              quoteSentAt: new Date().toISOString(),
+              quoteType: repairAfterInspection ? 'repair' : prev.jobPurpose === 'INSPECTION_DIAGNOSIS' || prev.jobPurpose === 'FAULT_FINDING' ? 'inspection' : 'standard',
+              inspectionApprovedAt: repairAfterInspection ? prev.inspectionApprovedAt || prev.customerApprovedAt : prev.inspectionApprovedAt,
+              customerApprovedAt: repairAfterInspection ? undefined : prev.customerApprovedAt,
+              inspectionAppointmentDate: repairAfterInspection ? prev.inspectionAppointmentDate || prev.scheduledDate : prev.inspectionAppointmentDate,
+              inspectionAppointmentTime: repairAfterInspection ? prev.inspectionAppointmentTime || prev.scheduledTime : prev.inspectionAppointmentTime,
+              scheduledDate: repairAfterInspection ? undefined : prev.scheduledDate,
+              scheduledTime: repairAfterInspection ? undefined : prev.scheduledTime,
+              appointmentConfirmation: repairAfterInspection ? 'Not Confirmed' : prev.appointmentConfirmation,
+              isConfirmed: repairAfterInspection ? false : prev.isConfirmed,
+            };
+          })}
           onUpdateDriveFolder={(url) =>
             updateCurrentJob((prev) => ({ ...prev, driveFolderUrl: url }))
           }
@@ -1559,6 +1666,7 @@ export default function App() {
               onOpenJobQuotation={(jobId, action) => {
                 handleOpenJobQuotation(jobId, action);
               }}
+              onOpenFinancialJob={handleOpenFinancialJob}
               onOpenQuickJob={handleOpenNormalJob}
               onOpenUrgentJob={handleOpenUrgentJob}
               onSelectCustomer={(custId) => {
@@ -1720,19 +1828,19 @@ export default function App() {
           {activeTab === 'money' && (
             <MoneyView
               jobs={jobsList}
+              customers={customers}
+              properties={properties}
               expenses={expenses}
               invoices={invoices}
               payments={payments}
-              onOpenFinancials={handleOpenFinancials}
               onOpenAddExpense={handleOpenAddExpense}
-              onOpenInvoice={handleOpenInvoice}
+              onSelectInvoice={handleOpenInvoice}
+              onSelectJob={(jobId) => {setActiveJobId(jobId); setPreviousViewMode('main'); setViewMode('inspection');}}
+              onSelectCustomer={(customerId) => {setSelectedCustomerIdForView(customerId); setActiveTab('customers');}}
               onOpenRecordPayment={handleOpenRecordPayment}
-              onCreateInvoiceForJob={handleCreateInvoiceForJob}
-              onOpenJobReport={(jobId) => {
-                setActiveJobId(jobId);
-                setPreviousViewMode('main');
-                setViewMode('report');
-              }}
+              onOpenCreateInvoice={() => {setActiveTab('jobs'); setToastMessage({title: 'Choose a job', subtitle: 'Open the job to create its invoice'});}}
+              onApplyAdvance={handleApplyAdvance}
+              onRecordMollyTransfer={handleMollyReviewedTransfer}
             />
           )}
 
@@ -1851,10 +1959,15 @@ export default function App() {
             onClose={() => {
               setIsPaymentModalOpen(false);
               setSelectedInvoiceIdForPayment(null);
+              setSelectedAdvanceJobId(null);
             }}
             invoices={invoices}
+            payments={payments}
+            jobs={jobsList}
             onRecordPayment={handleRecordPayment}
+            onRecordAdvance={handleRecordAdvance}
             presetInvoiceId={selectedInvoiceIdForPayment || undefined}
+            presetAdvanceJobId={selectedAdvanceJobId || undefined}
           />
         )}
 
@@ -2265,4 +2378,3 @@ export default function App() {
     </div>
   );
 }
-

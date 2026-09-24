@@ -660,6 +660,9 @@ export function getAppointmentStatus(
  */
 export function getDominantJobState(job: InspectionJob, lang: 'en' | 'th' = 'en'): DominantJobState {
   const isTh = lang === 'th';
+  // Preserve the original diagnostic path for legacy jobs without a purpose.
+  const needsDiagnosis = isTechnicalService(job.serviceType, job) &&
+    (!job.jobPurpose || job.jobPurpose === 'INSPECTION_DIAGNOSIS' || job.jobPurpose === 'FAULT_FINDING');
 
   // 1. Cancelled
   if (job.status === 'Cancelled') {
@@ -704,17 +707,24 @@ export function getDominantJobState(job: InspectionJob, lang: 'en' | 'th' = 'en'
     };
   }
 
-  const isTechnical = isTechnicalService(job.serviceType, job);
+  if (needsDiagnosis && job.scopeConfirmedAt &&
+      (!job.customerApprovedAt || job.customerApprovedAt <= job.scopeConfirmedAt)) {
+    if (job.quoteSentAt && job.quoteSentAt > job.scopeConfirmedAt) {
+      return { key: 'waiting_approval', label: isTh ? 'รอลูกค้าอนุมัติงานซ่อม' : 'Waiting Repair Approval', badgeClass: 'bg-sky-100 text-sky-950 border border-sky-300 font-bold' };
+    }
+    if (job.repairQuoteDraftedAt && job.repairQuoteDraftedAt > job.scopeConfirmedAt) {
+      return { key: 'quote_drafted', label: isTh ? 'ร่างใบเสนอราคาซ่อมแล้ว' : 'Repair Quote Drafted', badgeClass: 'bg-amber-50 text-amber-900 border border-amber-200 font-bold' };
+    }
+    return { key: 'scope_confirmed', label: isTh ? 'ทำใบเสนอราคางานซ่อม' : 'Prepare Repair Quote', badgeClass: 'bg-indigo-50 text-indigo-900 border border-indigo-200 font-bold' };
+  }
 
   // 4. In Progress: Work actively started on-site
   const isInProgress =
     job.status === 'In Progress' ||
-    Boolean(job.visitStartedAt) ||
-    Boolean(job.siteArrivedAt) ||
-    Boolean(job.actualStartedAt);
+    (!job.scopeConfirmedAt && (Boolean(job.visitStartedAt) || Boolean(job.siteArrivedAt) || Boolean(job.actualStartedAt)));
 
   if (isInProgress) {
-    if (isTechnical) {
+    if (needsDiagnosis) {
       if (job.scopeConfirmed) {
         if (job.customerApprovedAt || job.status === 'Approved') {
           return {
@@ -774,23 +784,23 @@ export function getDominantJobState(job: InspectionJob, lang: 'en' | 'th' = 'en'
         return {
           key: 'scheduled_unconfirmed',
           label: isTh
-            ? (isTechnical ? 'นัดตรวจแล้ว • ยังไม่ยืนยันนัด' : 'นัดหมายแล้ว • ยังไม่ยืนยันนัด')
-            : (isTechnical ? 'Inspection Scheduled • Unconfirmed' : 'Scheduled • Unconfirmed'),
+            ? (needsDiagnosis && !job.scopeConfirmed ? 'นัดตรวจแล้ว • ยังไม่ยืนยันนัด' : 'นัดหมายแล้ว • ยังไม่ยืนยันนัด')
+            : (needsDiagnosis && !job.scopeConfirmed ? 'Inspection Scheduled • Unconfirmed' : 'Scheduled • Unconfirmed'),
           badgeClass: 'bg-amber-100 text-amber-950 border border-amber-300 font-bold',
         };
       }
       return {
         key: 'scheduled_confirmed',
         label: isTh
-          ? (isTechnical ? 'นัดตรวจแล้ว • ยืนยันนัดแล้ว' : 'นัดหมายแล้ว • ยืนยันนัดแล้ว')
-          : (isTechnical ? 'Inspection Scheduled • Confirmed' : 'Scheduled • Confirmed'),
+          ? (needsDiagnosis && !job.scopeConfirmed ? 'นัดตรวจแล้ว • ยืนยันนัดแล้ว' : 'นัดหมายแล้ว • ยืนยันนัดแล้ว')
+          : (needsDiagnosis && !job.scopeConfirmed ? 'Inspection Scheduled • Confirmed' : 'Scheduled • Confirmed'),
         badgeClass: 'bg-indigo-100 text-indigo-900 border border-indigo-300 font-bold',
       };
     }
 
     return {
       key: 'approved_to_schedule',
-      label: isTh ? (isTechnical ? 'อนุมัติค่าตรวจแล้ว • รอนัดหมาย' : 'อนุมัติแล้ว • รอนัดหมาย') : isTechnical ? 'Approved • Ready to Schedule' : 'Approved • Ready to Schedule',
+      label: isTh ? (needsDiagnosis && !job.scopeConfirmed ? 'อนุมัติค่าตรวจแล้ว • รอนัดหมาย' : 'อนุมัติแล้ว • รอนัดหมาย') : 'Approved • Ready to Schedule',
       badgeClass: 'bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold',
     };
   }
@@ -806,12 +816,12 @@ export function getDominantJobState(job: InspectionJob, lang: 'en' | 'th' = 'en'
     return {
       key: 'waiting_approval',
       label: isTh
-        ? isTechnical
+        ? needsDiagnosis
           ? job.scopeConfirmed
             ? 'รอลูกค้าอนุมัติงานซ่อม'
             : 'รออนุมัติค่าตรวจ'
           : 'รอลูกค้าอนุมัติงาน'
-        : isTechnical
+        : needsDiagnosis
         ? job.scopeConfirmed
           ? 'Waiting Repair Approval'
           : 'Waiting Inspection Approval'
@@ -826,11 +836,11 @@ export function getDominantJobState(job: InspectionJob, lang: 'en' | 'th' = 'en'
     ((job.quotation?.hardwareItems && job.quotation.hardwareItems.length > 0) ||
       (job.quotation?.serviceItems && job.quotation.serviceItems.length > 0));
 
-  if (hasQuoteItems) {
+  if (hasQuoteItems && !(needsDiagnosis && job.scopeConfirmedAt && (!job.quoteSentAt || job.quoteSentAt < job.scopeConfirmedAt))) {
     return {
       key: 'quote_drafted',
       label: isTh
-        ? isTechnical
+        ? needsDiagnosis
           ? job.scopeConfirmed
             ? 'ร่างใบเสนอราคาซ่อมแล้ว'
             : 'ร่างใบเสนอราคาค่าตรวจแล้ว'
@@ -866,7 +876,7 @@ export function getDominantJobState(job: InspectionJob, lang: 'en' | 'th' = 'en'
 
   // 10. Technical Services where Scope is not yet confirmed and visit not started
   // Authoritative PTL Rule: Before inspection visit, PTL quotes the inspection fee / visit terms!
-  if (isTechnical) {
+  if (needsDiagnosis) {
     return {
       key: 'waiting_scope',
       label: isTh ? 'รอเสนอราคาค่าตรวจ' : 'Waiting Inspection Quote',
@@ -1443,11 +1453,13 @@ export function getPrimaryJobAction(job: InspectionJob, lang: 'en' | 'th' = 'en'
   const dominantState = getDominantJobState(job, lang);
   const isHomeWatch = isHomeWatchService(job.serviceType, job);
   const isTechnical = isTechnicalService(job.serviceType, job);
+  const needsDiagnosis = isTechnical &&
+    (!job.jobPurpose || job.jobPurpose === 'INSPECTION_DIAGNOSIS' || job.jobPurpose === 'FAULT_FINDING');
 
   switch (dominantState.key) {
     // 1. Technical scope not confirmed -> Create Inspection Quote for technical, or Assess with Mr. Big
     case 'waiting_scope':
-      if (isTechnical) {
+      if (needsDiagnosis) {
         return {
           key: 'create_inspection_quote',
           type: 'create_inspection_quote',
@@ -1526,15 +1538,15 @@ export function getPrimaryJobAction(job: InspectionJob, lang: 'en' | 'th' = 'en'
 
     // 4. Quotation out -> Customer Approved (or Follow Up)
     case 'waiting_approval': {
-      const isRepairQuote = isTechnical && Boolean(job.scopeConfirmed);
+      const isRepairQuote = needsDiagnosis && Boolean(job.scopeConfirmed);
       const approveLabelEn = isRepairQuote
         ? 'Approve Repair Quote'
-        : isTechnical
+        : needsDiagnosis
         ? 'Approve Inspection Quote'
         : 'Customer Approved';
       const approveLabelTh = isRepairQuote
         ? 'ลูกค้าอนุมัติงานซ่อม'
-        : isTechnical
+        : needsDiagnosis
         ? 'ลูกค้าอนุมัติค่าตรวจ'
         : 'ลูกค้าอนุมัติงานแล้ว';
       return {
@@ -1578,8 +1590,8 @@ export function getPrimaryJobAction(job: InspectionJob, lang: 'en' | 'th' = 'en'
 
     // 6. Customer approved and ready to schedule
     case 'approved_to_schedule': {
-      const schedLabelEn = isTechnical ? 'Schedule Inspection Visit' : 'Schedule Work';
-      const schedLabelTh = isTechnical ? 'นัดหมายวันเข้าตรวจ' : 'นัดหมายวันเข้าทำ';
+      const schedLabelEn = needsDiagnosis && !job.scopeConfirmed ? 'Schedule Inspection Visit' : 'Schedule Work';
+      const schedLabelTh = needsDiagnosis && !job.scopeConfirmed ? 'นัดหมายวันเข้าตรวจ' : 'นัดหมายวันเข้าทำ';
       return {
         key: 'schedule_job',
         type: 'schedule_job',
@@ -1636,8 +1648,8 @@ export function getPrimaryJobAction(job: InspectionJob, lang: 'en' | 'th' = 'en'
         };
       }
 
-      const startLabelEn = isTechnical || isHomeWatch ? 'Start Inspection' : 'Start Job';
-      const startLabelTh = isTechnical || isHomeWatch ? 'เริ่มเข้าตรวจ' : 'เริ่มงาน';
+      const startLabelEn = needsDiagnosis && !job.scopeConfirmed || isHomeWatch ? 'Start Inspection' : job.jobPurpose === 'REPLACEMENT' ? 'Start Replacement' : 'Start Work';
+      const startLabelTh = needsDiagnosis && !job.scopeConfirmed || isHomeWatch ? 'เริ่มเข้าตรวจ' : job.jobPurpose === 'REPLACEMENT' ? 'เริ่มเปลี่ยนอุปกรณ์' : 'เริ่มทำงาน';
       return {
         key: 'start_job',
         type: 'start_job',
@@ -1659,7 +1671,7 @@ export function getPrimaryJobAction(job: InspectionJob, lang: 'en' | 'th' = 'en'
 
     // 8. In Progress -> Resume Job (or Finish Field Work)
     case 'in_progress': {
-      if (isTechnical) {
+      if (needsDiagnosis) {
         if (job.scopeConfirmed) {
           return {
             key: 'finish_field_work',
@@ -1785,7 +1797,7 @@ export function getPrimaryJobAction(job: InspectionJob, lang: 'en' | 'th' = 'en'
     // 13. Default New
     case 'new':
     default:
-      if (isTechnical) {
+      if (needsDiagnosis) {
         return {
           key: 'assess_mr_big',
           type: 'assess_mr_big',

@@ -45,6 +45,7 @@ interface ReportScreenProps {
   job: InspectionJob;
   onBack: () => void;
   onUpdateQuotation?: (updatedQuotation: any) => void;
+  onQuoteSent?: () => void;
   onUpdateDriveFolder?: (url: string) => void;
   onOpenMollyHardware?: () => void;
   onOpenMollyExpress?: () => void;
@@ -59,6 +60,7 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
   job,
   onBack,
   onUpdateQuotation,
+  onQuoteSent,
   onUpdateDriveFolder,
   onOpenMollyHardware,
   onOpenMollyExpress,
@@ -1515,6 +1517,13 @@ Phuket Trusted Local • Peace of Mind Technical Audits`;
                   )}
                 </button>
               </div>
+
+              {activeTab === 'quotation' && onQuoteSent && (
+                <button type="button" onClick={() => { onQuoteSent(); setIsShareModalOpen(false); }}
+                  className="mt-3 w-full min-h-[44px] rounded-xl bg-blue-600 text-white text-sm font-bold">
+                  {job.quoteSentAt ? 'ยืนยันส่งใบเสนอราคาอีกครั้ง' : 'ส่งให้ลูกค้าแล้ว · บันทึกสถานะ'}
+                </button>
+              )}
 
               <p className="text-[11px] text-center text-slate-400 mt-3">
                 แนะนำให้แนบไฟล์ PDF ทั้ง 3 ฉบับตามไปด้วยเพื่อความน่าเชื่อถือระดับสูงสุด

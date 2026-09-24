@@ -307,7 +307,11 @@ export const ElectricalWorkspaceView: React.FC<ElectricalWorkspaceViewProps> = (
               <div className="flex items-center gap-2">
                 <span className="text-xs bg-amber-100 text-amber-900 font-extrabold px-2.5 py-0.5 rounded-full border border-amber-300 flex items-center gap-1">
                   <Zap className="w-3 h-3 text-amber-600" />
-                  <span>{isTh ? 'เริ่มการตรวจเช็กหน้างาน (Inspection)' : 'Inspection In Progress'}</span>
+                  <span>{job.jobPurpose === 'REPLACEMENT'
+                    ? (isTh ? 'งานเปลี่ยนอุปกรณ์ไฟฟ้า' : 'Electrical Replacement')
+                    : job.jobPurpose === 'INSTALLATION'
+                    ? (isTh ? 'งานติดตั้งไฟฟ้า' : 'Electrical Installation')
+                    : (isTh ? 'งานตรวจเช็กระบบไฟฟ้า' : 'Electrical Inspection')}</span>
                 </span>
                 <span className="text-[11px] text-slate-400 font-mono">Job #{job.id}</span>
               </div>
@@ -386,8 +390,8 @@ export const ElectricalWorkspaceView: React.FC<ElectricalWorkspaceViewProps> = (
                 className="p-3.5 bg-gradient-to-br from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl shadow-xs transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer active:scale-95 text-center"
               >
                 <Zap className="w-5 h-5 text-slate-950 fill-slate-950" />
-                <span className="text-xs">⚡ บันทึกผลกับ Mr. Big</span>
-                <span className="text-[10px] font-semibold text-amber-950/80">เริ่มวิเคราะห์หน้างาน</span>
+                <span className="text-xs">{job.jobPurpose === 'REPLACEMENT' ? (isTh ? 'ตรวจหน้างานก่อนเปลี่ยน' : 'Verify before replacement') : (isTh ? 'บันทึกผลตรวจ' : 'Record findings')}</span>
+                <span className="text-[10px] font-semibold text-amber-950/80">{isTh ? 'ยืนยันข้อมูลวงจรและขอบเขตงาน' : 'Confirm circuit and work scope'}</span>
               </button>
 
               {/* Add Finding */}
