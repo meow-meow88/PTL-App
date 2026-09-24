@@ -35,6 +35,7 @@ import {
   getOwnerStatusLabel,
 } from '../types';
 import { checkCustomerDeleteSafety, CustomerSafetyReport } from '../utils/crmStorage';
+import { useLanguage } from '../i18n/translations';
 
 interface CustomersViewProps {
   customers: Customer[];
@@ -67,6 +68,16 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
   onOpenJobQuotation,
   initialSelectedCustomerId,
 }) => {
+  const { lang } = useLanguage();
+  const isTh = lang === 'th';
+  const customerTypeLabel = (type: CustomerType) => isTh ? ({
+    Expat: 'ชาวต่างชาติ',
+    'Overseas Property Owner': 'เจ้าของทรัพย์สินต่างประเทศ',
+    'Local Customer': 'ลูกค้าในพื้นที่',
+    'Property Manager': 'ผู้ดูแลทรัพย์สิน',
+    Other: 'อื่นๆ',
+  } as Record<CustomerType, string>)[type] : type;
+  const customerStatusLabel = (status: Customer['status']) => isTh ? ({ Active: 'ใช้งาน', Lead: 'ผู้สนใจ', Past: 'ลูกค้าเก่า', Inactive: 'ไม่ใช้งาน' } as Record<Customer['status'], string>)[status] : status;
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(
@@ -175,14 +186,14 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
               <Users className="w-5 h-5" />
             </span>
             <h1 className="text-lg sm:text-xl font-black text-slate-900">
-              Customer CRM
+              {isTh ? 'ลูกค้า' : 'Customer CRM'}
             </h1>
             <span className="text-xs font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
-              {customers.length} total
+              {customers.length} {isTh ? 'ราย' : 'total'}
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Client profiles, properties, job history, and follow-up records
+            {isTh ? 'ข้อมูลลูกค้า ทรัพย์สิน ประวัติงาน และการติดตาม' : 'Client profiles, properties, job history, and follow-up records'}
           </p>
         </div>
 
@@ -191,7 +202,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
           className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm px-3.5 py-2 rounded-xl shadow-xs transition-colors cursor-pointer"
         >
           <Plus className="w-4 h-4 stroke-[3]" />
-          <span>Add Customer</span>
+          <span>{isTh ? 'เพิ่มลูกค้า' : 'Add Customer'}</span>
         </button>
       </div>
 
@@ -205,7 +216,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
               <input
                 type="text"
-                placeholder="Search name, phone, email..."
+                placeholder={isTh ? 'ค้นหาชื่อ เบอร์โทร หรืออีเมล...' : 'Search name, phone, email...'}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-blue-500 focus:bg-white"
@@ -221,7 +232,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                All ({customers.filter((c) => !c.isArchived).length})
+                {isTh ? 'ทั้งหมด' : 'All'} ({customers.filter((c) => !c.isArchived).length})
               </button>
               {(['Expat', 'Overseas Property Owner', 'Local Customer', 'Property Manager'] as CustomerType[]).map((t) => (
                 <button
@@ -233,7 +244,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
-                  {t}
+                  {customerTypeLabel(t)}
                 </button>
               ))}
               {customers.some((c) => c.isArchived) && (
@@ -246,7 +257,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                   }`}
                 >
                   <Archive className="w-2.5 h-2.5" />
-                  <span>Archived ({customers.filter((c) => c.isArchived).length})</span>
+                  <span>{isTh ? 'เก็บถาวร' : 'Archived'} ({customers.filter((c) => c.isArchived).length})</span>
                 </button>
               )}
             </div>
@@ -271,7 +282,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 mb-1">
                         <span className="text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded">
-                          {c.customerType}
+                          {customerTypeLabel(c.customerType)}
                         </span>
                         <span
                           className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
@@ -280,17 +291,17 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                               : 'bg-slate-100 text-slate-600'
                           }`}
                         >
-                          {c.status}
+                          {customerStatusLabel(c.status)}
                         </span>
                       </div>
                       <h3 className="text-sm font-black text-slate-900 truncate">
                         {c.name || c.fullName || c.preferredName}
                       </h3>
                       <p className="text-xs text-slate-500 truncate">
-                        {c.phone || c.lineWhatsapp || c.lineOrWhatsapp || c.email || 'No contact info'}
+                        {c.phone || c.lineWhatsapp || c.lineOrWhatsapp || c.email || (isTh ? 'ไม่มีข้อมูลติดต่อ' : 'No contact info')}
                       </p>
                       <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-2">
-                        <span>{propCount} {propCount === 1 ? 'property' : 'properties'}</span>
+                        <span>{propCount} {isTh ? 'ทรัพย์สิน' : propCount === 1 ? 'property' : 'properties'}</span>
                       </div>
                     </div>
                     <ChevronRight
@@ -305,7 +316,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
 
             {filteredCustomers.length === 0 && (
               <div className="p-8 text-center text-slate-400 bg-white rounded-xl border border-slate-200 text-xs">
-                No customers found matching your search.
+                {isTh ? 'ไม่พบลูกค้าที่ตรงกับคำค้นหา' : 'No customers found matching your search.'}
               </div>
             )}
           </div>
@@ -323,10 +334,10 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                       {selectedCustomer.id}
                     </span>
                     <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-800">
-                      {selectedCustomer.customerType}
+                      {customerTypeLabel(selectedCustomer.customerType)}
                     </span>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                      {selectedCustomer.status}
+                      {customerStatusLabel(selectedCustomer.status)}
                     </span>
                   </div>
                   <h2 className="text-xl sm:text-2xl font-black text-slate-900 mt-1">
@@ -334,7 +345,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                   </h2>
                   {selectedCustomer.preferredName && (
                     <p className="text-xs text-slate-500 font-medium">
-                      Preferred name: <strong>{selectedCustomer.preferredName}</strong>
+                      {isTh ? 'ชื่อที่ใช้เรียก: ' : 'Preferred name: '}<strong>{selectedCustomer.preferredName}</strong>
                     </p>
                   )}
                 </div>
@@ -433,7 +444,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                       : 'border-transparent text-slate-500 hover:text-slate-900'
                   }`}
                 >
-                  Customer → Property → Job
+                  {isTh ? 'ลูกค้า → ทรัพย์สิน → งาน' : 'Customer → Property → Job'}
                 </button>
                 <button
                   onClick={() => setProfileTab('properties')}
@@ -443,7 +454,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                       : 'border-transparent text-slate-500 hover:text-slate-900'
                   }`}
                 >
-                  Properties ({customerProperties.length})
+                  {isTh ? 'ทรัพย์สิน' : 'Properties'} ({customerProperties.length})
                 </button>
                 <button
                   onClick={() => setProfileTab('jobs')}
@@ -453,7 +464,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                       : 'border-transparent text-slate-500 hover:text-slate-900'
                   }`}
                 >
-                  Jobs ({customerJobs.length})
+                  {isTh ? 'งาน' : 'Jobs'} ({customerJobs.length})
                 </button>
                 <button
                   onClick={() => setProfileTab('quotes')}
@@ -463,7 +474,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                       : 'border-transparent text-slate-500 hover:text-slate-900'
                   }`}
                 >
-                  Quotes ({customerJobs.filter((j) => j.quotation).length})
+                  {isTh ? 'ใบเสนอราคา' : 'Quotes'} ({customerJobs.filter((j) => j.quotation).length})
                 </button>
                 <button
                   onClick={() => setProfileTab('reports')}
@@ -473,7 +484,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                       : 'border-transparent text-slate-500 hover:text-slate-900'
                   }`}
                 >
-                  Reports (3 PDF)
+                  {isTh ? 'รายงาน (3 PDF)' : 'Reports (3 PDF)'}
                 </button>
                 <button
                   onClick={() => setProfileTab('documents')}
@@ -483,7 +494,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                       : 'border-transparent text-slate-500 hover:text-slate-900'
                   }`}
                 >
-                  Documents
+                  {isTh ? 'เอกสาร' : 'Documents'}
                 </button>
                 <button
                   onClick={() => setProfileTab('followups')}
@@ -493,7 +504,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                       : 'border-transparent text-slate-500 hover:text-slate-900'
                   }`}
                 >
-                  Follow-ups
+                  {isTh ? 'ติดตามงาน' : 'Follow-ups'}
                 </button>
               </div>
 
