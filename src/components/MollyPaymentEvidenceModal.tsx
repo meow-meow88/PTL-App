@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { Invoice, InspectionJob, Payment } from '../types';
+import { readEvidenceFile } from '../utils/readEvidenceFile';
 
 type Transfer = {
   fileIndex: number;
@@ -43,16 +44,8 @@ export const MollyPaymentEvidenceModal: React.FC<Props> = ({invoices, jobs, paym
     if (!files.length) {setError('Attach an invoice and/or transfer slips first.'); return;}
     setError(''); setBusy(true); setStage('files'); setTransfers([]);
     try {
-      const attachments = await Promise.all(files.map((file) => new Promise<{mimeType: string; data: string}>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(new Error('Could not read ' + file.name));
-        reader.onload = () => {
-          const result = typeof reader.result === 'string' ? reader.result : '';
-          const data = result.startsWith('data:') ? result.slice(result.indexOf(',') + 1) : '';
-          if (!data || !result.includes(',')) reject(new Error('Could not read ' + file.name));
-          else resolve({mimeType: file.type, data});
-        };
-        try { reader.readAsDataURL(file); } catch { reject(new Error('Could not read ' + file.name)); }
+      const attachments = await Promise.all(files.map(async (file) => ({
+        mimeType: file.type, data: (await readEvidenceFile(file)).split(',')[1],
       })));
       setStage('request');
       const response = await fetch('/api/gemini/molly-payment-evidence', {method: 'POST', headers: {'Content-Type': 'application/json'},
