@@ -307,6 +307,9 @@ export const EditJobModal: React.FC<EditJobModalProps> = ({
               <option value="">{t.quickJob.purposeNotSet}</option>
               {JOB_PURPOSES.map((purpose) => <option key={purpose} value={purpose}>{t.jobPurpose[purpose]}</option>)}
             </select>
+            {jobPurpose === 'INSPECTION_DIAGNOSIS' && <p className="mt-1.5 text-xs text-slate-600">{t.quickJob.inspectionPurposeHelp}</p>}
+            {jobPurpose === 'FAULT_FINDING' && <p className="mt-1.5 text-xs text-slate-600">{t.quickJob.faultPurposeHelp}</p>}
+            {jobPurpose === 'KNOWN_SCOPE_SERVICE' && <p className="mt-1.5 text-xs text-slate-600">{t.quickJob.knownScopePurposeHelp}</p>}
           </div>
 
           <div>
