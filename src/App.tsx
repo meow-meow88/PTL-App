@@ -383,6 +383,13 @@ export default function App() {
             setExpenses(loadedExpenses);
             setInvoices(loadedInvoices);
             setPayments(loadedPayments);
+            if (loadedPayments.length) {
+              setJobsList((prev) => prev.map((item) => {
+                const received = Math.round(loadedPayments.filter((payment) => payment.jobId === item.id && payment.purpose === 'material_advance')
+                  .reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100;
+                return received && received !== item.materialDepositReceived ? {...item, materialDepositReceived: received} : item;
+              }));
+            }
           }
         } catch (finErr) {
           console.error('Finance load error:', finErr);
@@ -474,6 +481,7 @@ export default function App() {
 
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedInvoiceIdForPayment, setSelectedInvoiceIdForPayment] = useState<string | null>(null);
+  const [selectedAdvanceJobId, setSelectedAdvanceJobId] = useState<string | null>(null);
 
   const [isQuickJobModalOpen, setIsQuickJobModalOpen] = useState(false);
   const [quickJobPresetCustomer, setQuickJobPresetCustomer] = useState<string | null>(null);
@@ -597,6 +605,11 @@ export default function App() {
     const updated = recordMaterialAdvance(data, jobsList, payments);
     await savePayments(updated);
     setPayments(updated);
+    setJobsList((prev) => prev.map((job) => job.id === data.jobId ? {
+      ...job,
+      materialDepositReceived: Math.round(updated.filter((payment) => payment.jobId === job.id && payment.purpose === 'material_advance')
+        .reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100,
+    } : job));
     setToastMessage({title: 'Material advance recorded', subtitle: `฿${data.amount.toLocaleString()} for the new job`});
   };
 
@@ -626,8 +639,25 @@ export default function App() {
   };
 
   const handleOpenRecordPayment = (invoiceId: string) => {
+    setSelectedAdvanceJobId(null);
     setSelectedInvoiceIdForPayment(invoiceId);
     setIsPaymentModalOpen(true);
+  };
+
+  const handleOpenFinancialJob = (jobId: string, purpose: 'invoice' | 'advance') => {
+    setActiveTab('money');
+    if (purpose === 'advance') {
+      setSelectedAdvanceJobId(jobId);
+      setSelectedInvoiceIdForPayment(null);
+      setIsPaymentModalOpen(true);
+      return;
+    }
+    const invoice = invoices.find((item) => item.jobId === jobId && item.balanceDue > 0);
+    if (invoice) handleOpenRecordPayment(invoice.id);
+    else {
+      const target = jobsList.find((item) => item.id === jobId);
+      if (target) handleCreateInvoiceForJob(target);
+    }
   };
 
   const handleRestoreAllData = async (payload: {
@@ -1601,6 +1631,7 @@ export default function App() {
               onOpenJobQuotation={(jobId, action) => {
                 handleOpenJobQuotation(jobId, action);
               }}
+              onOpenFinancialJob={handleOpenFinancialJob}
               onOpenQuickJob={handleOpenNormalJob}
               onOpenUrgentJob={handleOpenUrgentJob}
               onSelectCustomer={(custId) => {
@@ -1892,6 +1923,7 @@ export default function App() {
             onClose={() => {
               setIsPaymentModalOpen(false);
               setSelectedInvoiceIdForPayment(null);
+              setSelectedAdvanceJobId(null);
             }}
             invoices={invoices}
             payments={payments}
@@ -1899,6 +1931,7 @@ export default function App() {
             onRecordPayment={handleRecordPayment}
             onRecordAdvance={handleRecordAdvance}
             presetInvoiceId={selectedInvoiceIdForPayment || undefined}
+            presetAdvanceJobId={selectedAdvanceJobId || undefined}
           />
         )}
 
