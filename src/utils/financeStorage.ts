@@ -173,8 +173,13 @@ export function createInvoiceFromJob(
   due.setDate(due.getDate() + 14); // 14 days payment terms
   const dueDateStr = due.toISOString().slice(0, 10);
 
-  const seq = String(existingInvoices.length + 1).padStart(3, '0');
-  const invoiceNumber = `PTL-INV-${dateStr.replace(/-/g, '').slice(0, 6)}-${seq}`;
+  const monthPrefix = `PTL-INV-${dateStr.replace(/-/g, '').slice(0, 6)}-`;
+  const highestSequence = existingInvoices.reduce((highest, invoice) => {
+    if (!invoice.invoiceNumber?.startsWith(monthPrefix)) return highest;
+    const sequence = Number(invoice.invoiceNumber.slice(monthPrefix.length));
+    return Number.isInteger(sequence) ? Math.max(highest, sequence) : highest;
+  }, 0);
+  const invoiceNumber = `${monthPrefix}${String(highestSequence + 1).padStart(3, '0')}`;
   const newInvoiceId = `INV-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
 
   // Extract items from quotation or single service
@@ -243,7 +248,7 @@ export function createInvoiceFromJob(
   }
 
   const total = subtotal; // No tax by default for local solo operator
-  const amountPaid = job.status === 'Paid' ? total : 0;
+  const amountPaid = 0; // A newly issued invoice has no payment rows yet, even if an older job was marked Paid.
   const balanceDue = total - amountPaid;
   const initialStatus: InvoiceStatus =
     amountPaid >= total ? 'Paid' : amountPaid > 0 ? 'Partially Paid' : 'Sent';
