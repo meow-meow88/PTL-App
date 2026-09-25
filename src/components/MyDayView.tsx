@@ -58,6 +58,7 @@ interface MyDayViewProps {
   onOpenCompactAppointment?: (job: InspectionJob) => void;
   onOpenEditJob?: (job: InspectionJob) => void;
   onCustomerApprove?: (jobId: string) => void;
+  onOpenCustomerResponse?: (jobId: string) => void;
   onFinishFieldWork?: (jobId: string) => void;
   onOpenFinancialJob?: (jobId: string, purpose: 'invoice' | 'advance') => void;
   onOpenMollyExpress?: (initialTab?: 'quote' | 'receipt') => void;
@@ -86,6 +87,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
   onOpenCompactAppointment,
   onOpenEditJob,
   onCustomerApprove,
+  onOpenCustomerResponse,
   onFinishFieldWork,
   onOpenFinancialJob,
   onOpenMollyExpress,
@@ -329,7 +331,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
               onOpenScheduleModal={onOpenScheduleModal} onOpenAssignVendorModal={onOpenAssignVendorModal}
               onConfirmAppointment={onConfirmAppointment} onOpenCompactAppointment={onOpenCompactAppointment}
               onOpenEditJob={onOpenEditJob} onUpdateJobStatus={onUpdateJobStatus}
-              onCustomerApprove={onCustomerApprove} onFinishFieldWork={onFinishFieldWork}
+              onCustomerApprove={onCustomerApprove} onOpenCustomerResponse={onOpenCustomerResponse} onFinishFieldWork={onFinishFieldWork}
               onOpenFinancialJob={onOpenFinancialJob}
               onSelectProperty={onSelectProperty} onSelectCustomer={onSelectCustomer} />)}
           </div>
@@ -369,7 +371,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
                 onOpenCompactAppointment={onOpenCompactAppointment}
                 onOpenEditJob={onOpenEditJob}
                 onUpdateJobStatus={onUpdateJobStatus}
-                onCustomerApprove={onCustomerApprove}
+                onCustomerApprove={onCustomerApprove} onOpenCustomerResponse={onOpenCustomerResponse}
                 onFinishFieldWork={onFinishFieldWork}
                 onSelectProperty={onSelectProperty}
                 onSelectCustomer={onSelectCustomer}
@@ -431,7 +433,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
                 onOpenCompactAppointment={onOpenCompactAppointment}
                 onOpenEditJob={onOpenEditJob}
                 onUpdateJobStatus={onUpdateJobStatus}
-                onCustomerApprove={onCustomerApprove}
+                onCustomerApprove={onCustomerApprove} onOpenCustomerResponse={onOpenCustomerResponse}
                 onFinishFieldWork={onFinishFieldWork}
                 onSelectProperty={onSelectProperty}
                 onSelectCustomer={onSelectCustomer}
@@ -481,7 +483,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
                 onOpenCompactAppointment={onOpenCompactAppointment}
                 onOpenEditJob={onOpenEditJob}
                 onUpdateJobStatus={onUpdateJobStatus}
-                onCustomerApprove={onCustomerApprove}
+                onCustomerApprove={onCustomerApprove} onOpenCustomerResponse={onOpenCustomerResponse}
                 onFinishFieldWork={onFinishFieldWork}
                 onSelectProperty={onSelectProperty}
                 onSelectCustomer={onSelectCustomer}

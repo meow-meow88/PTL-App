@@ -46,13 +46,13 @@ export const PTL_SERVICES: ServiceDefinition[] = [
     id: 'home_watch',
     name: 'Home Watch',
     nameEn: 'Home Watch',
-    nameTh: 'ตรวจบ้านประจำงวด (Home Watch)',
+    nameTh: 'Home Watch',
     category: 'home',
     workflowPreset: 'VISIT',
     defaultPrice: 1500,
     iconName: 'ShieldCheck',
     descriptionEn: 'Scheduled villa inspection & condition documentation',
-    descriptionTh: 'ตรวจสภาพวิลล่า บันทึกจุดตรวจ และออกรายงานสภาพบ้าน',
+    descriptionTh: 'Repeat villa checks with photos and a separate report for each visit.',
     capabilities: {
       homeWatchChecklist: true,
       photos: true,
@@ -68,16 +68,30 @@ export const PTL_SERVICES: ServiceDefinition[] = [
     },
   },
   {
+    id: 'home_inspection',
+    name: 'Home Inspection',
+    nameEn: 'Home Inspection',
+    nameTh: 'Home Inspection',
+    category: 'home',
+    workflowPreset: 'VISIT',
+    defaultPrice: 0,
+    iconName: 'ClipboardCheck',
+    descriptionEn: 'One-time detailed villa condition audit across rooms and systems, with findings, photos and a report. Quote the inspection before visiting.',
+    descriptionTh: 'One-time detailed villa condition audit across rooms and systems, with findings, photos and a report. Quote the inspection before visiting.',
+    capabilities: { checklist: true, photos: true, findings: true, report: true, location: true,
+      customerContact: true, appointment: true, quote: true, payment: true, notes: true },
+  },
+  {
     id: 'property_visit',
     name: 'Property Visit',
     nameEn: 'Property Visit',
-    nameTh: 'เข้าตรวจดูทรัพย์สิน',
+    nameTh: 'Property Visit',
     category: 'home',
     workflowPreset: 'VISIT',
     defaultPrice: 1500,
     iconName: 'Building2',
     descriptionEn: 'On-site property inspection or client walkthrough',
-    descriptionTh: 'เข้าดูสถานที่หน้างาน ตรวจสอบทั่วไปตามคำขอ',
+    descriptionTh: 'One-time property visit for a specific request; no automatic repeat.',
     capabilities: {
       notes: true,
       photos: true,
@@ -559,7 +573,7 @@ export function getLocalizedServiceName(serviceType?: string, lang: 'en' | 'th' 
     return isTh ? 'กล้องวงจรปิด' : 'CCTV';
   }
   if (lower.includes('home watch') || lower.includes('ตรวจบ้าน')) {
-    return isTh ? 'ตรวจบ้านประจำงวด' : 'Home Watch';
+    return 'Home Watch';
   }
   if (lower.includes('aircon') || lower.includes('แอร์')) {
     return isTh ? 'ประสานงานช่างแอร์' : 'Aircon Coordination';
@@ -583,7 +597,7 @@ export function getLocalizedServiceName(serviceType?: string, lang: 'en' | 'th' 
     return isTh ? 'ติดตั้งไวไฟและอินเทอร์เน็ต' : 'WiFi / Internet Setup';
   }
   if (lower.includes('visit') || lower.includes('เข้าตรวจ')) {
-    return isTh ? 'เข้าตรวจดูทรัพย์สิน' : 'Property Visit';
+    return 'Property Visit';
   }
 
   return clean;
@@ -884,8 +898,16 @@ export function getDominantJobState(job: InspectionJob, lang: 'en' | 'th' = 'en'
     };
   }
 
-  // 11. Scheduled (for non-technical/visit/assistance where appointment is set)
+  // 11. A tentative date is not commercial approval. A newly scheduled
+  // assistance/visit job still needs a quote unless the customer approved it.
   if (job.scheduledDate || job.status === 'Scheduled') {
+    if (!job.customerApprovedAt && !job.quoteSentAt && !hasQuoteItems) {
+      return {
+        key: 'new',
+        label: isTh ? 'รอเสนอราคาก่อนเริ่มงาน' : 'Quote Before Starting',
+        badgeClass: 'bg-amber-100 text-amber-950 border border-amber-300 font-bold',
+      };
+    }
     const isConfirmed = job.appointmentConfirmation === 'Confirmed' || job.isConfirmed === true;
     if (!isConfirmed) {
       return {
@@ -910,7 +932,7 @@ export function getDominantJobState(job: InspectionJob, lang: 'en' | 'th' = 'en'
 }
 
 /**
- * Default 16-point Home Watch Checklist
+ * Default Home Watch Checklist
  */
 export function createDefaultHomeWatchChecklist(): HomeWatchChecklistItem[] {
   return [
@@ -939,6 +961,12 @@ export function createDefaultHomeWatchChecklist(): HomeWatchChecklistItem[] {
       id: 'hw_elec_lights',
       category: 'Electricity',
       title: 'Selected lights working',
+      status: 'Normal',
+    },
+    {
+      id: 'hw_elec_fans',
+      category: 'Electricity',
+      title: 'Fans working where included',
       status: 'Normal',
     },
     {
@@ -1028,6 +1056,26 @@ export function createDefaultHomeWatchChecklist(): HomeWatchChecklistItem[] {
   ];
 }
 
+/** A one-time full villa audit covers more than the repeating Home Watch checks. */
+export function createDefaultHomeInspectionChecklist(): HomeWatchChecklistItem[] {
+  return [
+    ...createDefaultHomeWatchChecklist(),
+    { id: 'hi_roof', category: 'Structure', title: 'Roof / ceiling visible condition', status: 'Normal' },
+    { id: 'hi_walls', category: 'Structure', title: 'Walls / floors / cracks / dampness', status: 'Normal' },
+    { id: 'hi_windows', category: 'Structure', title: 'Windows / seals / doors', status: 'Normal' },
+    { id: 'hi_kitchen', category: 'Kitchen', title: 'Kitchen fixtures and appliances', status: 'Normal' },
+    { id: 'hi_bathroom', category: 'Bathrooms', title: 'Fixtures, drains and water pressure', status: 'Normal' },
+    { id: 'hi_ac_units', category: 'Air Conditioning', title: 'Condition of each accessible AC unit', status: 'Normal' },
+    { id: 'hi_safety', category: 'Safety', title: 'Smoke alarms and visible safety issues', status: 'Normal' },
+    { id: 'hi_outside', category: 'Exterior', title: 'Roof drainage, boundaries and outside fixtures', status: 'Normal' },
+  ];
+}
+
+export function isHomeInspectionService(serviceType?: string): boolean {
+  const clean = (serviceType || '').toLowerCase();
+  return clean === 'home_inspection' || clean.includes('home inspection');
+}
+
 /**
  * Format date & time for display
  */
@@ -1096,6 +1144,7 @@ export function isHomeWatchService(serviceType?: string, job?: InspectionJob): b
     job?.homeWatchChecklist &&
     job.homeWatchChecklist.length > 0 &&
     !clean.includes('property visit') &&
+    !clean.includes('home inspection') &&
     !clean.includes('เข้าตรวจดูทรัพย์สิน')
   ) {
     return true;
@@ -1457,6 +1506,16 @@ export function getPrimaryJobAction(job: InspectionJob, lang: 'en' | 'th' = 'en'
     (!job.jobPurpose || job.jobPurpose === 'INSPECTION_DIAGNOSIS' || job.jobPurpose === 'FAULT_FINDING');
 
   switch (dominantState.key) {
+    case 'cancelled':
+      return {
+        key: 'open_closed_job',
+        type: 'open_job',
+        labelEn: 'View Closed Job',
+        labelTh: 'ดูงานที่ปิดแล้ว',
+        label: isTh ? 'ดูงานที่ปิดแล้ว' : 'View Closed Job',
+        variant: 'slate',
+        buttonClass: 'bg-slate-700 hover:bg-slate-600 text-white font-black',
+      };
     // 1. Technical scope not confirmed -> Create Inspection Quote for technical, or Assess with Mr. Big
     case 'waiting_scope':
       if (needsDiagnosis) {
@@ -1536,27 +1595,20 @@ export function getPrimaryJobAction(job: InspectionJob, lang: 'en' | 'th' = 'en'
         },
       };
 
-    // 4. Quotation out -> Customer Approved (or Follow Up)
+    // 4. A sent quotation needs an actual customer response. Never mark it
+    // approved merely because the operator opened the job card.
     case 'waiting_approval': {
       const isRepairQuote = needsDiagnosis && Boolean(job.scopeConfirmed);
-      const approveLabelEn = isRepairQuote
-        ? 'Approve Repair Quote'
-        : needsDiagnosis
-        ? 'Approve Inspection Quote'
-        : 'Customer Approved';
-      const approveLabelTh = isRepairQuote
-        ? 'ลูกค้าอนุมัติงานซ่อม'
-        : needsDiagnosis
-        ? 'ลูกค้าอนุมัติค่าตรวจ'
-        : 'ลูกค้าอนุมัติงานแล้ว';
+      const responseLabelEn = isRepairQuote ? 'Record Repair Quote Response' : 'Record Customer Response';
+      const responseLabelTh = isRepairQuote ? 'บันทึกคำตอบเรื่องงานซ่อม' : 'บันทึกคำตอบลูกค้า';
       return {
-        key: 'customer_approved',
-        type: 'customer_approved',
-        labelEn: approveLabelEn,
-        labelTh: approveLabelTh,
-        label: isTh ? approveLabelTh : approveLabelEn,
-        variant: 'emerald',
-        buttonClass: 'bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow-xs ring-1 ring-emerald-400',
+        key: 'record_customer_response',
+        type: 'record_customer_response',
+        labelEn: responseLabelEn,
+        labelTh: responseLabelTh,
+        label: isTh ? responseLabelTh : responseLabelEn,
+        variant: 'blue',
+        buttonClass: 'bg-blue-600 hover:bg-blue-500 text-white font-black shadow-xs',
         secondaryAction: {
           key: 'follow_up_customer',
           type: 'follow_up_customer',
@@ -1794,7 +1846,8 @@ export function getPrimaryJobAction(job: InspectionJob, lang: 'en' | 'th' = 'en'
         buttonClass: 'bg-slate-800 hover:bg-slate-700 text-white font-black shadow-xs',
       };
 
-    // 13. Default New
+    // 13. New work: confirm scope and price before starting, whatever the
+    // service type. Urgent dispatch can still use the quick quotation route.
     case 'new':
     default:
       if (needsDiagnosis) {
@@ -1817,13 +1870,13 @@ export function getPrimaryJobAction(job: InspectionJob, lang: 'en' | 'th' = 'en'
         };
       }
       return {
-        key: 'start_job',
-        type: 'start_job',
-        labelEn: 'Start Job',
-        labelTh: 'เริ่มงาน',
-        label: isTh ? 'เริ่มงาน' : 'Start Job',
-        variant: 'emerald',
-        buttonClass: 'bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow-xs',
+        key: 'create_quote',
+        type: 'create_quote',
+        labelEn: job.urgency === 'Urgent' ? 'Prepare Quick Quote' : 'Prepare Quote',
+        labelTh: job.urgency === 'Urgent' ? 'ทำใบเสนอราคาด่วน' : 'ทำใบเสนอราคา',
+        label: isTh ? (job.urgency === 'Urgent' ? 'ทำใบเสนอราคาด่วน' : 'ทำใบเสนอราคา') : (job.urgency === 'Urgent' ? 'Prepare Quick Quote' : 'Prepare Quote'),
+        variant: 'blue',
+        buttonClass: 'bg-blue-600 hover:bg-blue-500 text-white font-black shadow-xs',
       };
   }
 }

@@ -24,6 +24,7 @@ import { recordJobActivity } from '../utils/jobEvents';
 
 interface HomeWatchVisitViewProps {
   job: InspectionJob;
+  title?: string;
   onUpdateJob: (updater: (prev: InspectionJob) => InspectionJob) => void;
   onCompleteVisit: () => void;
   onCreateFollowupJob: (issueNote: string, checklistItem: HomeWatchChecklistItem) => void;
@@ -32,6 +33,7 @@ interface HomeWatchVisitViewProps {
 
 export const HomeWatchVisitView: React.FC<HomeWatchVisitViewProps> = ({
   job,
+  title,
   onUpdateJob,
   onCompleteVisit,
   onCreateFollowupJob,
@@ -233,7 +235,7 @@ export const HomeWatchVisitView: React.FC<HomeWatchVisitViewProps> = ({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                {t.homeWatchFlow.title}
+                {title || t.homeWatchFlow.title}
               </span>
               {isVisitStarted && (
                 <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-400">
@@ -491,7 +493,7 @@ export const HomeWatchVisitView: React.FC<HomeWatchVisitViewProps> = ({
       <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h3 className="text-sm font-black text-slate-900">
-            {t.homeWatchFlow.summaryTitle}
+            {title ? `${title} Summary` : t.homeWatchFlow.summaryTitle}
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
             {metrics.normal} {t.homeWatchFlow.normalBtn} • {metrics.issue} {t.homeWatchFlow.issueBtn} • {metrics.na} {t.homeWatchFlow.naBtn} • {metrics.photosCount} {lang === 'th' ? 'ภาพถ่ายหลักฐาน' : 'photos'}

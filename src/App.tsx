@@ -106,7 +106,7 @@ import {
   saveTasks,
 } from './utils/operationsStorage';
 import { initialVendorsSeed, initialRecurringServicesSeed } from './data/operationsSeedData';
-import { generateAutomatedFollowUps } from './utils/followUpEngine';
+import { generateAutomatedFollowUps, processRecurringJobCompletion } from './utils/followUpEngine';
 import { Expense, Invoice, Payment, PaymentMethod } from './types';
 import {
   safeGetLocalStorage,
@@ -447,6 +447,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'main' | 'inspection' | 'report' | 'dashboard'>('main');
   const [previousViewMode, setPreviousViewMode] = useState<'main' | 'inspection'>('main');
   const [reportInitialAction, setReportInitialAction] = useState<'view' | 'edit' | 'send' | 'preview'>('view');
+  const [openCustomerResponseForJobId, setOpenCustomerResponseForJobId] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Customer[]>(initialCustomersSeed);
   const [properties, setProperties] = useState<Property[]>(initialPropertiesSeed);
 
@@ -910,11 +911,15 @@ export default function App() {
     });
   };
 
-  const handleSaveQuickJob = (newJob: InspectionJob) => {
-    setJobsList((prev) => [newJob, ...prev]);
-    setActiveJobId(newJob.id);
-
+  const handleSaveQuickJob = (newJob: InspectionJob, plan?: RecurringService) => {
     const syncRes = ensureCustomerAndPropertyForJob(newJob, customers, properties);
+    const linkedJob = { ...newJob, customerId: syncRes.customerId, propertyId: syncRes.propertyId };
+    setJobsList((prev) => [linkedJob, ...prev]);
+    setActiveJobId(linkedJob.id);
+    if (plan) {
+      handleSaveRecurringService({ ...plan, customerId: syncRes.customerId, propertyId: syncRes.propertyId,
+        customerName: newJob.customerName, propertyName: newJob.villaName });
+    }
     if (syncRes.updatedCustomers.length !== customers.length) {
       setCustomers(syncRes.updatedCustomers);
       saveCustomers(syncRes.updatedCustomers);
@@ -1795,6 +1800,13 @@ export default function App() {
               recurringServices={recurringServices}
               tasks={tasks}
               onOpenJobInspection={(jobId) => {
+                setOpenCustomerResponseForJobId(null);
+                setActiveJobId(jobId);
+                setPreviousViewMode('main');
+                setViewMode('inspection');
+              }}
+              onOpenCustomerResponse={(jobId) => {
+                setOpenCustomerResponseForJobId(jobId);
                 setActiveJobId(jobId);
                 setPreviousViewMode('main');
                 setViewMode('inspection');
@@ -1930,6 +1942,13 @@ export default function App() {
               vendors={vendors}
               onOpenQuickJob={() => setIsQuickJobModalOpen(true)}
               onOpenJobInspection={(jobId) => {
+                setOpenCustomerResponseForJobId(null);
+                setActiveJobId(jobId);
+                setPreviousViewMode('main');
+                setViewMode('inspection');
+              }}
+              onOpenCustomerResponse={(jobId) => {
+                setOpenCustomerResponseForJobId(jobId);
                 setActiveJobId(jobId);
                 setPreviousViewMode('main');
                 setViewMode('inspection');
@@ -2250,13 +2269,15 @@ export default function App() {
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans w-full max-w-full overflow-x-hidden">
       <JobWorkspaceView
         job={job}
+        openCustomerResponseOnMount={openCustomerResponseForJobId === job.id}
+        onCustomerResponseClosed={() => setOpenCustomerResponseForJobId(null)}
         jobsList={jobsList}
         customers={customers}
         properties={properties}
         vendors={vendors}
         invoices={invoices}
         expenses={expenses}
-        onBackToMain={() => setViewMode('main')}
+        onBackToMain={() => { setOpenCustomerResponseForJobId(null); setViewMode('main'); }}
         onSelectJob={handleSelectJob}
         onUpdateJob={updateCurrentJob}
         onOpenQuickJob={handleOpenNormalJob}
@@ -2269,6 +2290,10 @@ export default function App() {
         }}
         onOpenQuotation={(jobId, action) => {
           handleOpenJobQuotation(jobId, action);
+        }}
+        onOpenFinancialJob={(jobId, purpose) => {
+          setViewMode('main');
+          handleOpenFinancialJob(jobId, purpose);
         }}
         onOpenQuickEstimate={() => setIsQuickEstimateOpen(true)}
         onOpenFindingModal={(item) => {
@@ -2316,11 +2341,25 @@ export default function App() {
           });
         }}
         onCompleteJob={() => {
+          const completedAt = new Date().toISOString();
           updateCurrentJob((prev) => ({
             ...prev,
             status: 'Completed',
-            completedAt: new Date().toISOString(),
+            completedAt,
+            waitingOn: prev.status === 'Paid' ? 'none' : 'payment',
           }));
+          if (job.recurringServiceId && job.status !== 'Completed') {
+            const result = processRecurringJobCompletion({
+              completedJob: { ...job, status: 'Completed', completedAt },
+              recurringServices,
+              jobs: jobsList,
+              customer: customers.find((item) => item.id === job.customerId),
+              property: properties.find((item) => item.id === job.propertyId),
+            });
+            setRecurringServices(result.updatedServices);
+            void saveRecurringServices(result.updatedServices);
+            if (result.newJob) setJobsList((prev) => prev.some((item) => item.id === result.newJob?.id) ? prev : [result.newJob!, ...prev]);
+          }
           setToastMessage({
             title: lang === 'th' ? 'บันทึกปิดงานเสร็จสมบูรณ์' : 'Job Completed',
             subtitle: `${job.serviceType} - ${job.villaName}`,

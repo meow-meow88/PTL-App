@@ -188,6 +188,7 @@ export const RecurringServicesModal: React.FC<RecurringServicesModalProps> = ({
   };
 
   const handleToggleStatus = (service: RecurringService) => {
+    if (service.status === 'Completed' || service.status === 'Cancelled') return;
     const newStatus: RecurringStatus = service.status === 'Active' ? 'Paused' : 'Active';
     onSaveService({
       ...service,
@@ -319,11 +320,11 @@ export const RecurringServicesModal: React.FC<RecurringServicesModalProps> = ({
                                 : 'bg-slate-100 text-slate-600 border-slate-200'
                             }`}
                           >
-                            {service.status}
+                            {isTh ? ({ Active: 'กำลังดำเนินการ', Paused: 'พักไว้', Cancelled: 'ยกเลิก', Completed: 'ครบทุกครั้งแล้ว' }[service.status]) : service.status}
                           </span>
                           {isFinite ? (
                             <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-purple-100 text-purple-900">
-                              {service.completedVisits || 0} / {service.totalVisits || 4} Visits
+                              {service.completedVisits || 0} / {service.totalVisits || 4} {isTh ? 'ครั้ง' : 'visits'}
                             </span>
                           ) : (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
@@ -375,7 +376,7 @@ export const RecurringServicesModal: React.FC<RecurringServicesModalProps> = ({
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
-                        <button
+                        {service.status !== 'Completed' && service.status !== 'Cancelled' && <button
                           onClick={() => handleToggleStatus(service)}
                           className={`p-2.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
                             isActive
@@ -385,7 +386,7 @@ export const RecurringServicesModal: React.FC<RecurringServicesModalProps> = ({
                           title={isActive ? 'Pause service' : 'Resume service'}
                         >
                           {isActive ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                        </button>
+                        </button>}
 
                         <button
                           onClick={() => handleEdit(service)}
