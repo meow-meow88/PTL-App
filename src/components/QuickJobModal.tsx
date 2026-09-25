@@ -17,12 +17,14 @@ import {
   MapPin,
   CheckCircle2,
 } from 'lucide-react';
-import { Customer, Property, InspectionJob, JobPurpose } from '../types';
+import { Customer, Property, InspectionJob, JobPurpose, RecurringService } from '../types';
+import { generateHomeWatchSchedule } from '../utils/homeWatchSchedule';
 import { JOB_PURPOSES, suggestJobPurpose } from '../utils/jobPurpose';
 import {
   PTL_SERVICES,
   getWorkflowPresetForService,
   createDefaultHomeWatchChecklist,
+  createDefaultHomeInspectionChecklist,
   isHomeWatchService,
   ServiceDefinition,
 } from '../utils/serviceWorkflow';
@@ -33,7 +35,7 @@ interface QuickJobModalProps {
   onClose: () => void;
   customers: Customer[];
   properties: Property[];
-  onSaveJob: (newJob: InspectionJob) => void;
+  onSaveJob: (newJob: InspectionJob, plan?: RecurringService) => void;
   presetCustomerId?: string | null;
   presetPropertyId?: string | null;
   initialUrgency?: 'Normal' | 'Urgent';
@@ -71,6 +73,12 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
   const [requestDescription, setRequestDescription] = useState('');
   const [price, setPrice] = useState<string>('1500');
   const [isPriceCustomized, setIsPriceCustomized] = useState<boolean>(false);
+  const [homeWatchVisits, setHomeWatchVisits] = useState(1);
+  const [homeWatchFirstDate, setHomeWatchFirstDate] = useState(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  });
+  const [homeWatchTime, setHomeWatchTime] = useState('10:00');
 
   const selectedServiceDef = PTL_SERVICES.find((s) => s.id === selectedServiceId) || PTL_SERVICES[0];
 
@@ -110,7 +118,7 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
     if (!purposeCustomized) setJobPurpose(suggestJobPurpose(service.id));
     // Price safety: Only set default placeholder price if user has not entered a custom price
     if (!isPriceCustomized) {
-      setPrice(String(service.defaultPrice));
+      setPrice(service.defaultPrice > 0 ? String(service.defaultPrice) : '');
     }
     if (service.id === 'roadside_tire') {
       setUrgency('Urgent');
@@ -144,7 +152,7 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
         ? customServiceText.trim()
         : selectedServiceDef.name;
 
-    const parsedPrice = parseFloat(price) || selectedServiceDef.defaultPrice || 1500;
+    const parsedPrice = Number.isFinite(Number(price)) && Number(price) > 0 ? Number(price) : 0;
     const today = new Date();
     const dateSlug = today.toISOString().slice(0, 10).replace(/-/g, '');
     const randomSuffix = Math.floor(100 + Math.random() * 900);
@@ -153,6 +161,10 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
     const workflowPreset = getWorkflowPresetForService(finalService);
     const isHomeWatch = isHomeWatchService(finalService);
     const operationalArea = matchedProperty?.area || (finalLocation.includes(',') ? finalLocation.split(',')[0].trim() : undefined);
+    const homeWatchSchedule = isHomeWatch
+      ? generateHomeWatchSchedule(homeWatchFirstDate, homeWatchTime, 'Every 2 Weeks', homeWatchVisits)
+      : [];
+    const planId = isHomeWatch && homeWatchVisits > 1 ? `REC-${Date.now()}-${randomSuffix}` : undefined;
 
     const newJob: InspectionJob = {
       id: newJobId,
@@ -169,9 +181,12 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
           : 'villa_owner',
       propertyLocation: finalLocation,
       serviceType: finalService,
+      recurringServiceId: planId,
       jobPurpose,
       status: urgency === 'Urgent' ? 'In Progress' : 'New',
       inspectionDate: today.toISOString().slice(0, 10),
+      scheduledDate: isHomeWatch ? homeWatchFirstDate : undefined,
+      scheduledTime: isHomeWatch ? homeWatchTime : undefined,
       createdAt: today.toISOString(),
       inspector: 'PTL Solo Operator',
       documentRef: `PTL-${dateSlug}`,
@@ -214,7 +229,8 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
           : []),
       ],
       items: [],
-      homeWatchChecklist: isHomeWatch ? createDefaultHomeWatchChecklist() : undefined,
+      homeWatchChecklist: isHomeWatch ? createDefaultHomeWatchChecklist()
+        : selectedServiceId === 'home_inspection' ? createDefaultHomeInspectionChecklist() : undefined,
       evidencePhotos: [],
       quotation: {
         refNo: `QT-${dateSlug}-${randomSuffix}`,
@@ -223,7 +239,7 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
         validity: '30 days',
         paymentTerm: 'Payment due upon completion. 50% deposit for work exceeding ฿10,000.',
         hardwareItems: [],
-        serviceItems: [
+        serviceItems: parsedPrice > 0 ? [
           {
             item: 1,
             description: finalService,
@@ -232,7 +248,7 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
             qty: '1 Job',
             amount: parsedPrice,
           },
-        ],
+        ] : [],
         procurementFeeRate: 0.15,
         terms: [
           'Payment due upon completion.',
@@ -243,7 +259,25 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
       },
     };
 
-    onSaveJob(newJob);
+    const plan: RecurringService | undefined = planId ? {
+      id: planId,
+      customerId: selectedCustomerId,
+      propertyId: selectedPropertyId,
+      serviceType: finalService,
+      frequency: 'Every 2 Weeks',
+      price: parsedPrice,
+      nextDueDate: homeWatchFirstDate,
+      status: 'Active',
+      notes: requestDescription,
+      autoCreateJob: true,
+      planType: 'finite',
+      totalVisits: homeWatchVisits,
+      completedVisits: 0,
+      preferredTime: homeWatchTime,
+      visitSchedule: homeWatchSchedule.map((visit, index) => index === 0 ? { ...visit, jobId: newJobId } : visit),
+      createdAt: today.toISOString(),
+    } : undefined;
+    onSaveJob(newJob, plan);
     onClose();
   };
 
@@ -333,7 +367,7 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
                       {lang === 'th' ? service.nameTh : service.nameEn}
                     </div>
                     <div className="flex items-center justify-between mt-1 text-[10px] text-slate-500">
-                      <span className="font-semibold text-blue-700">฿{service.defaultPrice.toLocaleString()}</span>
+                      <span className="font-semibold text-blue-700">{service.defaultPrice > 0 ? `฿${service.defaultPrice.toLocaleString()}` : 'Quote required'}</span>
                       {service.id === 'roadside_tire' && (
                         <span className="bg-red-100 text-red-700 font-bold px-1 rounded text-[9px]">Emergency</span>
                       )}
@@ -353,7 +387,45 @@ export const QuickJobModal: React.FC<QuickJobModalProps> = ({
                 className="mt-2 w-full px-3 py-1.5 bg-white border border-blue-400 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
               />
             )}
+            {(['home_watch', 'property_visit', 'home_inspection'].includes(selectedServiceId)) && (
+              <p className="mt-2 text-xs text-slate-600">
+                {selectedServiceId === 'home_watch'
+                  ? 'Home Watch: repeat the same checklist, with photos and a report for each visit.'
+                  : selectedServiceId === 'home_inspection'
+                  ? 'Home Inspection: one full villa audit of rooms and systems, with findings, photos and a report. Quote the scope first.'
+                  : 'Property Visit: one visit for a specific request; no repeat visits.'}
+              </p>
+            )}
           </div>
+
+          {selectedServiceId === 'home_watch' && (
+            <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3 space-y-3">
+              <div>
+                <strong className="block text-sm text-slate-900">How many Home Watch visits?</strong>
+                <p className="text-xs text-slate-600">Each visit gets its own checklist and photos.</p>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[1, 2, 4, 8].map((count) => (
+                  <button key={count} type="button" onClick={() => setHomeWatchVisits(count)}
+                    className={`min-h-[44px] rounded-lg border text-xs font-bold ${homeWatchVisits === count ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-700 border-slate-300'}`}>
+                    {count} {count === 1 ? 'visit' : 'visits'}
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-xs font-semibold text-slate-700">First visit
+                  <input required type="date" value={homeWatchFirstDate} onChange={(event) => setHomeWatchFirstDate(event.target.value)} className="mt-1 block w-full min-w-0 min-h-[44px] rounded-lg border border-slate-300 bg-white px-2" />
+                </label>
+                <label className="text-xs font-semibold text-slate-700">Time
+                  <input required type="time" value={homeWatchTime} onChange={(event) => setHomeWatchTime(event.target.value)} className="mt-1 block w-full min-w-0 min-h-[44px] rounded-lg border border-slate-300 bg-white px-2" />
+                </label>
+              </div>
+              {homeWatchVisits > 1 && <p className="text-xs text-blue-900 font-medium">
+                Every 14 days:{' '}
+                {generateHomeWatchSchedule(homeWatchFirstDate, homeWatchTime, 'Every 2 Weeks', homeWatchVisits).map((visit) => visit.scheduledDate).join(' · ')}
+              </p>}
+            </div>
+          )}
 
           <div>
             <label htmlFor="quick-job-purpose" className="block text-xs font-bold text-slate-700 mb-1">

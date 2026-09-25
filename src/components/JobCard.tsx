@@ -47,6 +47,7 @@ interface JobCardProps {
   onOpenEditJob?: (job: InspectionJob) => void;
   onUpdateJobStatus?: (jobId: string, status: InspectionJob['status']) => void;
   onCustomerApprove?: (jobId: string) => void;
+  onOpenCustomerResponse?: (jobId: string) => void;
   onFinishFieldWork?: (jobId: string) => void;
   onOpenFinancialJob?: (jobId: string, purpose: 'invoice' | 'advance') => void;
   onSelectProperty?: (propertyId: string) => void;
@@ -68,6 +69,7 @@ export const JobCard: React.FC<JobCardProps> = ({
   onOpenEditJob,
   onUpdateJobStatus,
   onCustomerApprove,
+  onOpenCustomerResponse,
   onFinishFieldWork,
   onOpenFinancialJob,
   onSelectProperty,
@@ -140,6 +142,10 @@ export const JobCard: React.FC<JobCardProps> = ({
         break;
       case 'send_quote':
         onOpenQuotation(job.id, 'send');
+        break;
+      case 'record_customer_response':
+        if (onOpenCustomerResponse) onOpenCustomerResponse(job.id);
+        else onOpenInspection(job.id);
         break;
       case 'customer_approved':
         if (onCustomerApprove) {

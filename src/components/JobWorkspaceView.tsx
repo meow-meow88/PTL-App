@@ -40,6 +40,7 @@ import {
   getDominantJobState,
   getPrimaryJobAction,
   isHomeWatchService,
+  isHomeInspectionService,
   isRoadsideService,
   isElectricalService,
   isCctvService,
@@ -60,10 +61,13 @@ import { PetAssistanceWorkspaceView } from './workspaces/PetAssistanceWorkspaceV
 import { AirportAssistanceWorkspaceView } from './workspaces/AirportAssistanceWorkspaceView';
 import { GeneralAssistanceWorkspaceView } from './workspaces/GeneralAssistanceWorkspaceView';
 import { CompactAppointmentModal } from './CompactAppointmentModal';
+import { CustomerResponseModal } from './CustomerResponseModal';
 import { BeforeInspectionWorkspaceView } from './workspaces/BeforeInspectionWorkspaceView';
 
 interface JobWorkspaceViewProps {
   job: InspectionJob;
+  openCustomerResponseOnMount?: boolean;
+  onCustomerResponseClosed?: () => void;
   jobsList: InspectionJob[];
   customers: Customer[];
   properties: Property[];
@@ -78,6 +82,7 @@ interface JobWorkspaceViewProps {
   onOpenMultiJob: () => void;
   onOpenReport: () => void;
   onOpenQuotation: (jobId: string, action?: 'view' | 'edit' | 'send' | 'preview') => void;
+  onOpenFinancialJob: (jobId: string, purpose: 'invoice' | 'advance') => void;
   onOpenQuickEstimate?: () => void;
   onOpenFindingModal?: (item?: any) => void;
   onDeleteFinding?: (itemId: string) => void;
@@ -93,6 +98,8 @@ interface JobWorkspaceViewProps {
 
 export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
   job,
+  openCustomerResponseOnMount = false,
+  onCustomerResponseClosed,
   jobsList,
   customers,
   properties,
@@ -107,6 +114,7 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
   onOpenMultiJob,
   onOpenReport,
   onOpenQuotation,
+  onOpenFinancialJob,
   onOpenQuickEstimate,
   onOpenFindingModal,
   onDeleteFinding,
@@ -125,6 +133,7 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
 
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isApptModalOpen, setIsApptModalOpen] = useState(false);
+  const [isCustomerResponseOpen, setIsCustomerResponseOpen] = useState(openCustomerResponseOnMount);
 
   // Lookup customer and property
   const customer = customers.find((c) => c.id === job.customerId);
@@ -163,14 +172,34 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
 
   // Determine current dominant state and explanation
   const getDominantStateDetails = () => {
-    if (isDirectWork && job.status !== 'Completed' && !job.actualCompletedAt && !job.fieldWorkCompletedAt) {
-      const state = getDominantJobState(job, lang);
-      const action = getPrimaryJobAction(job, lang);
+    const state = getDominantJobState(job, lang);
+    if (state.key === 'cancelled') {
       return {
-        stage: state.key === 'in_progress' ? 'direct_work_active' : 'direct_work_pending',
+        stage: 'workflow_closed',
         badge: state.label,
         badgeBg: state.badgeClass,
-        explanation: job.requestDescription || job.serviceType,
+        explanation: isTh ? 'งานนี้ไม่ได้ดำเนินการต่อ' : 'This job is not going ahead.',
+        nextStep: isTh ? 'กลับไปดูงานอื่น' : 'Return to your jobs',
+        actionLabel: isTh ? 'กลับ My Day' : 'Back to My Day',
+        actionColor: 'bg-slate-800 hover:bg-slate-700 text-white',
+        onAction: onBackToMain,
+      };
+    }
+    const actionableBeforeVisit = new Set([
+      'new', 'waiting_scope', 'scope_confirmed', 'quote_drafted',
+      'waiting_approval', 'approved_to_schedule', 'scheduled_unconfirmed',
+      'scheduled_confirmed', 'waiting_vendor', 'waiting_deposit',
+    ]);
+    if ((isDirectWork && job.status !== 'Completed' && !job.actualCompletedAt && !job.fieldWorkCompletedAt) ||
+        (actionableBeforeVisit.has(state.key) && !job.visitStartedAt && !job.actualStartedAt && !job.siteArrivedAt)) {
+      const action = getPrimaryJobAction(job, lang);
+      return {
+        stage: state.key === 'in_progress' ? 'direct_work_active' : state.key === 'waiting_vendor' ? 'workflow_vendor' : 'workflow_pending',
+        badge: state.label,
+        badgeBg: state.badgeClass,
+        explanation: state.key === 'waiting_approval'
+          ? (isTh ? 'ส่งใบเสนอราคาแล้ว รอคำตอบจากลูกค้า' : 'Quotation sent; waiting for the customer.')
+          : job.requestDescription || job.serviceType,
         nextStep: action.label,
         actionLabel: action.label,
         actionColor: action.buttonClass,
@@ -180,12 +209,18 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
             case 'create_inspection_quote':
             case 'quick_quote': onOpenQuotation(job.id, 'edit'); break;
             case 'send_quote': onOpenQuotation(job.id, 'send'); break;
-            case 'customer_approved': onUpdateJob((prev) => ({ ...prev, status: 'Approved', customerApprovedAt: new Date().toISOString() })); break;
+            case 'record_customer_response': setIsCustomerResponseOpen(true); break;
+            case 'record_deposit':
+            case 'request_deposit': onOpenFinancialJob(job.id, 'advance'); break;
             case 'schedule_job': if (onOpenScheduleModal) onOpenScheduleModal(job); else setIsApptModalOpen(true); break;
             case 'confirm_appointment': setIsApptModalOpen(true); break;
             case 'start_job': onUpdateJob((prev) => ({ ...prev, status: 'In Progress', actualStartedAt: new Date().toISOString() })); break;
             case 'finish_field_work': onUpdateJob((prev) => ({ ...prev, status: 'Completed', actualCompletedAt: new Date().toISOString() })); break;
-            default: document.getElementById('service-workspace')?.scrollIntoView({ behavior: 'smooth' });
+            case 'assess_mr_big':
+            case 'resume_job':
+            case 'assign_vendor':
+            case 'contact_vendor': document.getElementById('job-workspace-field-tools')?.scrollIntoView({ behavior: 'smooth' }); break;
+            default: document.getElementById('job-workspace-field-tools')?.scrollIntoView({ behavior: 'smooth' });
           }
         },
       };
@@ -220,9 +255,7 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
           actionLabel: isTh ? 'รับชำระเงิน' : 'Collect Payment',
           actionColor: 'bg-emerald-600 hover:bg-emerald-500 text-white',
           onAction: () => {
-            const inv = invoices.find((i) => i.jobId === job.id);
-            const bal = inv?.balanceDue ?? inv?.totalAmount ?? job.quotation?.serviceItems?.[0]?.amount ?? 2500;
-            onRecordPayment(job.id, bal);
+            onOpenFinancialJob(job.id, 'invoice');
           },
         };
       }
@@ -236,7 +269,7 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
         nextStep: isTh ? 'ออกใบแจ้งหนี้เรียกเก็บเงิน' : 'Create final invoice',
         actionLabel: isTh ? 'ออกใบแจ้งหนี้' : 'Create Invoice',
         actionColor: 'bg-blue-600 hover:bg-blue-500 text-white',
-        onAction: onOpenReport,
+        onAction: () => onOpenFinancialJob(job.id, 'invoice'),
       };
     }
 
@@ -342,10 +375,16 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
           : isTh
           ? 'กำลังดำเนินการตรวจเช็คหน้างานและบันทึกข้อเท็จจริง'
           : 'Field inspection in progress. Preserving facts and tests.',
-        nextStep: isTh ? 'บันทึกผลการตรวจเช็กกับ Mr. Big' : 'Record field findings with Mr. Big',
-        actionLabel: isTh ? 'บันทึกกับ Mr. Big' : 'Talk to Mr. Big',
+        nextStep: isHomeWatch
+          ? (isTh ? 'ทำเช็กลิสต์และถ่ายรูปของรอบนี้' : 'Complete this visit’s checklist and photos')
+          : (isTh ? 'บันทึกผลการตรวจเช็กกับ Mr. Big' : 'Record field findings with Mr. Big'),
+        actionLabel: isHomeWatch ? (isTh ? 'ทำเช็กลิสต์รอบนี้' : 'Open Visit Checklist') : (isTh ? 'บันทึกกับ Mr. Big' : 'Talk to Mr. Big'),
         actionColor: 'bg-blue-600 hover:bg-blue-500 text-white font-black',
         onAction: () => {
+          if (isHomeWatch) {
+            document.getElementById('job-workspace-field-tools')?.scrollIntoView({ behavior: 'smooth' });
+            return;
+          }
           const el = document.getElementById('mr-big-assessment-card');
           if (el) {
             el.scrollIntoView({ behavior: 'smooth' });
@@ -746,12 +785,16 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
       {/* ========================================================================= */}
       {/* 3. CORE WORKFLOW ENGINE RENDERER (Clean, Progressive Disclosure) */}
       {/* ========================================================================= */}
-      <main className="max-w-4xl mx-auto w-full px-3 sm:px-6 py-4 flex-1 min-w-0">
-        {stateDetails.stage === 'direct_work_pending' ? (
+      <main id="job-workspace-field-tools" className="max-w-4xl mx-auto w-full px-3 sm:px-6 py-4 flex-1 min-w-0">
+        {stateDetails.stage === 'workflow_closed' ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-700">
+            {isTh ? 'งานนี้ไม่ได้ดำเนินการต่อ คุณยังลบงานร่างที่ไม่มีการอนุมัติหรือรับเงินได้' : 'This job is not going ahead. Unapproved, unpaid drafts can still be deleted.'}
+          </div>
+        ) : stateDetails.stage === 'workflow_pending' || stateDetails.stage === 'direct_work_pending' ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-700">
             <p className="font-bold text-slate-900">{isTh ? 'รายละเอียดงาน' : 'Job details'}</p>
             <p className="mt-2">{job.requestDescription || job.serviceType}</p>
-            <p className="mt-2 text-slate-500">{isTh ? 'เครื่องมือหน้างานจะแสดงเมื่อเริ่มทำงาน' : 'Field tools appear when work starts.'}</p>
+            <p className="mt-2 text-slate-500">{isTh ? 'ทำขั้นตอนด้านบนก่อน เครื่องมือหน้างานจะแสดงเมื่อเริ่มทำงาน' : 'Complete the action above before starting field work.'}</p>
           </div>
         ) : stateDetails.stage === 'before_inspection' ? (
           <BeforeInspectionWorkspaceView
@@ -782,9 +825,10 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
             onOpenQuickEstimate={onOpenQuickEstimate}
             onUpdateJob={onUpdateJob}
           />
-        ) : isHomeWatchService(job.serviceType, job) ? (
+        ) : isHomeWatchService(job.serviceType, job) || isHomeInspectionService(job.serviceType) ? (
           <HomeWatchVisitView
             job={job}
+            title={isHomeInspectionService(job.serviceType) ? 'Home Inspection' : undefined}
             onUpdateJob={onUpdateJob}
             onCompleteVisit={() => {
               onUpdateJob((prev) => ({
@@ -810,7 +854,10 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
             onUpdateJob={onUpdateJob}
             onRecordPayment={(jobId, amt) => onRecordPayment(jobId, amt)}
             onAssignVendor={(vendor) => onAssignVendor(vendor)}
-            onCompleteJob={onCompleteJob}
+            onCompleteJob={() => {
+              onCompleteJob();
+              window.setTimeout(() => document.getElementById('job-workspace-btn-primary-action')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+            }}
             onResumePreviousJob={(prevId) => onSelectJob(prevId)}
           />
         ) : isElectricalService(job.serviceType) ? (
@@ -992,6 +1039,19 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
           </button>
         </div>
       </main>
+
+      <CustomerResponseModal
+        isOpen={isCustomerResponseOpen}
+        job={job}
+        onClose={() => { setIsCustomerResponseOpen(false); onCustomerResponseClosed?.(); }}
+        onApprove={() => onUpdateJob((prev) => ({ ...prev, status: 'Approved', customerApprovedAt: new Date().toISOString(), waitingOn: 'none', waitingReason: undefined, nextFollowUpDate: undefined }))}
+        onRequestRevision={(_, notes) => {
+          onUpdateJob((prev) => ({ ...prev, status: 'New', quoteSentAt: undefined, repairQuoteSentAt: undefined, waitingOn: 'none', waitingReason: notes }));
+          onOpenQuotation(job.id, 'edit');
+        }}
+        onMarkUndecided={(_, notes, followUpDate) => onUpdateJob((prev) => ({ ...prev, status: 'Waiting Customer', waitingOn: 'customer', waitingReason: notes || (isTh ? 'ลูกค้ายังไม่ตัดสินใจ' : 'Customer is deciding'), nextFollowUpDate: followUpDate }))}
+        onDecline={(_, reason) => onUpdateJob((prev) => ({ ...prev, status: 'Cancelled', waitingOn: 'none', waitingReason: reason || (isTh ? 'ลูกค้าไม่ดำเนินการต่อ' : 'Customer declined'), actionRequired: undefined, nextFollowUpDate: undefined }))}
+      />
 
       {/* Compact Appointment Modal */}
       <CompactAppointmentModal

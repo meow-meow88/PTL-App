@@ -11,6 +11,7 @@ export function suggestJobPurpose(serviceId: string): JobPurpose {
   switch (serviceId) {
     case 'home_watch': return 'HOME_WATCH_VISIT';
     case 'property_visit': return 'INSPECTION_DIAGNOSIS';
+    case 'home_inspection': return 'INSPECTION_DIAGNOSIS';
     case 'property_coordination':
     case 'vendor_coordination':
     case 'repair_supervision': return 'VENDOR_COORDINATION';

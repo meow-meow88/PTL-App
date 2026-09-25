@@ -818,7 +818,7 @@ export type RecurringFrequency =
   | 'Quarterly'
   | 'Custom';
 
-export type RecurringStatus = 'Active' | 'Paused' | 'Cancelled';
+export type RecurringStatus = 'Active' | 'Paused' | 'Cancelled' | 'Completed';
 
 export interface HomeWatchVisitScheduleItem {
   visitNumber: number;
@@ -911,6 +911,10 @@ export type HomeWatchChecklistCategory =
   | 'Interior'
   | 'Exterior'
   | 'Security'
+  | 'Structure'
+  | 'Kitchen'
+  | 'Bathrooms'
+  | 'Safety'
   | 'General';
 
 export interface HomeWatchChecklistItem {

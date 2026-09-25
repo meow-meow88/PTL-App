@@ -8,6 +8,7 @@ import {
   Property,
   Vendor,
 } from '../types';
+import { createDefaultHomeWatchChecklist, isHomeWatchService } from './serviceWorkflow';
 
 /**
  * Calculates the next due date based on frequency from a base date (YYYY-MM-DD)
@@ -414,16 +415,27 @@ export function processRecurringJobCompletion(params: {
     completedJob.scheduledDate ||
     new Date().toISOString().slice(0, 10);
 
-  const nextDue = calculateNextDueDate(
+  const completedVisits = (targetService.completedVisits || 0) + 1;
+  const visitSchedule = targetService.visitSchedule?.map((visit) =>
+    visit.jobId === completedJob.id || (!visit.jobId && visit.scheduledDate === completedJob.scheduledDate && visit.status !== 'Completed')
+      ? { ...visit, jobId: completedJob.id, status: 'Completed' as const, completedAt: completedJob.completedAt || new Date().toISOString() }
+      : visit
+  );
+  const nextVisit = visitSchedule?.find((visit) => visit.status !== 'Completed');
+  const nextDue = nextVisit?.scheduledDate || calculateNextDueDate(
     completionDate,
     targetService.frequency,
     targetService.interval
   );
+  const finishedPlan = targetService.planType === 'finite' && completedVisits >= (targetService.totalVisits || 1);
 
   const updatedService: RecurringService = {
     ...targetService,
     lastCompletedDate: completionDate,
     nextDueDate: nextDue,
+    completedVisits: Math.min(completedVisits, targetService.totalVisits || completedVisits),
+    visitSchedule,
+    status: finishedPlan ? 'Completed' : targetService.status,
   };
 
   const updatedServices = recurringServices.map((s) =>
@@ -431,7 +443,7 @@ export function processRecurringJobCompletion(params: {
   );
 
   // Check if autoCreateJob is enabled
-  if (!targetService.autoCreateJob) {
+  if (!targetService.autoCreateJob || finishedPlan || targetService.status !== 'Active') {
     return { updatedServices };
   }
 
@@ -481,6 +493,7 @@ export function processRecurringJobCompletion(params: {
     customerGroup: completedJob.customerGroup || 'expat',
     propertyLocation: property?.area || completedJob.propertyLocation || 'Phuket',
     serviceType: targetService.serviceType,
+    jobPurpose: completedJob.jobPurpose,
     status: 'Scheduled',
     inspectionDate: nextDue,
     createdAt: new Date().toISOString(),
@@ -488,6 +501,7 @@ export function processRecurringJobCompletion(params: {
     documentRef: newJobId,
     scheduledDate: nextDue,
     scheduledTime: completedJob.scheduledTime ? (completedJob.scheduledTime.includes('AM') || completedJob.scheduledTime.includes('PM') ? completedJob.scheduledTime.replace(/AM|PM/gi, '').trim() : completedJob.scheduledTime) : '10:00',
+    customerApprovedAt: completedJob.customerApprovedAt,
     appointmentConfirmation: 'Not Confirmed',
     recurringServiceId: targetService.id,
     price: targetService.price || completedJob.price || 0,
@@ -496,6 +510,7 @@ export function processRecurringJobCompletion(params: {
     requestDescription: `Scheduled recurring ${targetService.serviceType} (Frequency: ${targetService.frequency}). Notes: ${targetService.notes}`,
     notes: targetService.notes,
     items: [],
+    homeWatchChecklist: isHomeWatchService(targetService.serviceType) ? createDefaultHomeWatchChecklist() : undefined,
     quotation: {
       refNo: `QT-${newJobId}`,
       date: nextDue,
@@ -520,7 +535,12 @@ export function processRecurringJobCompletion(params: {
   };
 
   return {
-    updatedServices,
+    updatedServices: updatedServices.map((service) => service.id === targetService.id ? {
+      ...service,
+      visitSchedule: service.visitSchedule?.map((visit) => visit.scheduledDate === nextDue && visit.status !== 'Completed'
+        ? { ...visit, jobId: newJob.id, status: 'Scheduled' as const }
+        : visit),
+    } : service),
     newJob,
   };
 }
