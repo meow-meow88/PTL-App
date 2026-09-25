@@ -884,8 +884,16 @@ export function getDominantJobState(job: InspectionJob, lang: 'en' | 'th' = 'en'
     };
   }
 
-  // 11. Scheduled (for non-technical/visit/assistance where appointment is set)
+  // 11. A tentative date is not commercial approval. A newly scheduled
+  // assistance/visit job still needs a quote unless the customer approved it.
   if (job.scheduledDate || job.status === 'Scheduled') {
+    if (!job.customerApprovedAt && !job.quoteSentAt && !hasQuoteItems) {
+      return {
+        key: 'new',
+        label: isTh ? 'รอเสนอราคาก่อนเริ่มงาน' : 'Quote Before Starting',
+        badgeClass: 'bg-amber-100 text-amber-950 border border-amber-300 font-bold',
+      };
+    }
     const isConfirmed = job.appointmentConfirmation === 'Confirmed' || job.isConfirmed === true;
     if (!isConfirmed) {
       return {
@@ -1536,27 +1544,20 @@ export function getPrimaryJobAction(job: InspectionJob, lang: 'en' | 'th' = 'en'
         },
       };
 
-    // 4. Quotation out -> Customer Approved (or Follow Up)
+    // 4. A sent quotation needs an actual customer response. Never mark it
+    // approved merely because the operator opened the job card.
     case 'waiting_approval': {
       const isRepairQuote = needsDiagnosis && Boolean(job.scopeConfirmed);
-      const approveLabelEn = isRepairQuote
-        ? 'Approve Repair Quote'
-        : needsDiagnosis
-        ? 'Approve Inspection Quote'
-        : 'Customer Approved';
-      const approveLabelTh = isRepairQuote
-        ? 'ลูกค้าอนุมัติงานซ่อม'
-        : needsDiagnosis
-        ? 'ลูกค้าอนุมัติค่าตรวจ'
-        : 'ลูกค้าอนุมัติงานแล้ว';
+      const responseLabelEn = isRepairQuote ? 'Record Repair Quote Response' : 'Record Customer Response';
+      const responseLabelTh = isRepairQuote ? 'บันทึกคำตอบเรื่องงานซ่อม' : 'บันทึกคำตอบลูกค้า';
       return {
-        key: 'customer_approved',
-        type: 'customer_approved',
-        labelEn: approveLabelEn,
-        labelTh: approveLabelTh,
-        label: isTh ? approveLabelTh : approveLabelEn,
-        variant: 'emerald',
-        buttonClass: 'bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow-xs ring-1 ring-emerald-400',
+        key: 'record_customer_response',
+        type: 'record_customer_response',
+        labelEn: responseLabelEn,
+        labelTh: responseLabelTh,
+        label: isTh ? responseLabelTh : responseLabelEn,
+        variant: 'blue',
+        buttonClass: 'bg-blue-600 hover:bg-blue-500 text-white font-black shadow-xs',
         secondaryAction: {
           key: 'follow_up_customer',
           type: 'follow_up_customer',
@@ -1794,7 +1795,8 @@ export function getPrimaryJobAction(job: InspectionJob, lang: 'en' | 'th' = 'en'
         buttonClass: 'bg-slate-800 hover:bg-slate-700 text-white font-black shadow-xs',
       };
 
-    // 13. Default New
+    // 13. New work: confirm scope and price before starting, whatever the
+    // service type. Urgent dispatch can still use the quick quotation route.
     case 'new':
     default:
       if (needsDiagnosis) {
@@ -1817,13 +1819,13 @@ export function getPrimaryJobAction(job: InspectionJob, lang: 'en' | 'th' = 'en'
         };
       }
       return {
-        key: 'start_job',
-        type: 'start_job',
-        labelEn: 'Start Job',
-        labelTh: 'เริ่มงาน',
-        label: isTh ? 'เริ่มงาน' : 'Start Job',
-        variant: 'emerald',
-        buttonClass: 'bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow-xs',
+        key: 'create_quote',
+        type: 'create_quote',
+        labelEn: job.urgency === 'Urgent' ? 'Prepare Quick Quote' : 'Prepare Quote',
+        labelTh: job.urgency === 'Urgent' ? 'ทำใบเสนอราคาด่วน' : 'ทำใบเสนอราคา',
+        label: isTh ? (job.urgency === 'Urgent' ? 'ทำใบเสนอราคาด่วน' : 'ทำใบเสนอราคา') : (job.urgency === 'Urgent' ? 'Prepare Quick Quote' : 'Prepare Quote'),
+        variant: 'blue',
+        buttonClass: 'bg-blue-600 hover:bg-blue-500 text-white font-black shadow-xs',
       };
   }
 }
