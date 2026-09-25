@@ -78,6 +78,7 @@ interface JobWorkspaceViewProps {
   onOpenMultiJob: () => void;
   onOpenReport: () => void;
   onOpenQuotation: (jobId: string, action?: 'view' | 'edit' | 'send' | 'preview') => void;
+  onOpenFinancialJob: (jobId: string, purpose: 'invoice' | 'advance') => void;
   onOpenQuickEstimate?: () => void;
   onOpenFindingModal?: (item?: any) => void;
   onDeleteFinding?: (itemId: string) => void;
@@ -107,6 +108,7 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
   onOpenMultiJob,
   onOpenReport,
   onOpenQuotation,
+  onOpenFinancialJob,
   onOpenQuickEstimate,
   onOpenFindingModal,
   onDeleteFinding,
@@ -125,6 +127,7 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
 
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isApptModalOpen, setIsApptModalOpen] = useState(false);
+  const [isCustomerResponseOpen, setIsCustomerResponseOpen] = useState(false);
 
   // Lookup customer and property
   const customer = customers.find((c) => c.id === job.customerId);
@@ -163,14 +166,34 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
 
   // Determine current dominant state and explanation
   const getDominantStateDetails = () => {
-    if (isDirectWork && job.status !== 'Completed' && !job.actualCompletedAt && !job.fieldWorkCompletedAt) {
-      const state = getDominantJobState(job, lang);
-      const action = getPrimaryJobAction(job, lang);
+    const state = getDominantJobState(job, lang);
+    if (state.key === 'cancelled') {
       return {
-        stage: state.key === 'in_progress' ? 'direct_work_active' : 'direct_work_pending',
+        stage: 'workflow_closed',
         badge: state.label,
         badgeBg: state.badgeClass,
-        explanation: job.requestDescription || job.serviceType,
+        explanation: isTh ? 'งานนี้ไม่ได้ดำเนินการต่อ' : 'This job is not going ahead.',
+        nextStep: isTh ? 'กลับไปดูงานอื่น' : 'Return to your jobs',
+        actionLabel: isTh ? 'กลับ My Day' : 'Back to My Day',
+        actionColor: 'bg-slate-800 hover:bg-slate-700 text-white',
+        onAction: onBackToMain,
+      };
+    }
+    const actionableBeforeVisit = new Set([
+      'new', 'waiting_scope', 'scope_confirmed', 'quote_drafted',
+      'waiting_approval', 'approved_to_schedule', 'scheduled_unconfirmed',
+      'scheduled_confirmed', 'waiting_vendor', 'waiting_deposit',
+    ]);
+    if ((isDirectWork && job.status !== 'Completed' && !job.actualCompletedAt && !job.fieldWorkCompletedAt) ||
+        (actionableBeforeVisit.has(state.key) && !job.visitStartedAt && !job.actualStartedAt && !job.siteArrivedAt)) {
+      const action = getPrimaryJobAction(job, lang);
+      return {
+        stage: state.key === 'in_progress' ? 'direct_work_active' : state.key === 'waiting_vendor' ? 'workflow_vendor' : 'workflow_pending',
+        badge: state.label,
+        badgeBg: state.badgeClass,
+        explanation: state.key === 'waiting_approval'
+          ? (isTh ? 'ส่งใบเสนอราคาแล้ว รอคำตอบจากลูกค้า' : 'Quotation sent; waiting for the customer.')
+          : job.requestDescription || job.serviceType,
         nextStep: action.label,
         actionLabel: action.label,
         actionColor: action.buttonClass,
@@ -180,12 +203,18 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
             case 'create_inspection_quote':
             case 'quick_quote': onOpenQuotation(job.id, 'edit'); break;
             case 'send_quote': onOpenQuotation(job.id, 'send'); break;
-            case 'customer_approved': onUpdateJob((prev) => ({ ...prev, status: 'Approved', customerApprovedAt: new Date().toISOString() })); break;
+            case 'record_customer_response': setIsCustomerResponseOpen(true); break;
+            case 'record_deposit':
+            case 'request_deposit': onOpenFinancialJob(job.id, 'advance'); break;
             case 'schedule_job': if (onOpenScheduleModal) onOpenScheduleModal(job); else setIsApptModalOpen(true); break;
             case 'confirm_appointment': setIsApptModalOpen(true); break;
             case 'start_job': onUpdateJob((prev) => ({ ...prev, status: 'In Progress', actualStartedAt: new Date().toISOString() })); break;
             case 'finish_field_work': onUpdateJob((prev) => ({ ...prev, status: 'Completed', actualCompletedAt: new Date().toISOString() })); break;
-            default: document.getElementById('service-workspace')?.scrollIntoView({ behavior: 'smooth' });
+            case 'assess_mr_big':
+            case 'resume_job':
+            case 'assign_vendor':
+            case 'contact_vendor': document.getElementById('job-workspace-field-tools')?.scrollIntoView({ behavior: 'smooth' }); break;
+            default: document.getElementById('job-workspace-field-tools')?.scrollIntoView({ behavior: 'smooth' });
           }
         },
       };
@@ -220,9 +249,7 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
           actionLabel: isTh ? 'รับชำระเงิน' : 'Collect Payment',
           actionColor: 'bg-emerald-600 hover:bg-emerald-500 text-white',
           onAction: () => {
-            const inv = invoices.find((i) => i.jobId === job.id);
-            const bal = inv?.balanceDue ?? inv?.totalAmount ?? job.quotation?.serviceItems?.[0]?.amount ?? 2500;
-            onRecordPayment(job.id, bal);
+            onOpenFinancialJob(job.id, 'invoice');
           },
         };
       }
@@ -236,7 +263,7 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
         nextStep: isTh ? 'ออกใบแจ้งหนี้เรียกเก็บเงิน' : 'Create final invoice',
         actionLabel: isTh ? 'ออกใบแจ้งหนี้' : 'Create Invoice',
         actionColor: 'bg-blue-600 hover:bg-blue-500 text-white',
-        onAction: onOpenReport,
+        onAction: () => onOpenFinancialJob(job.id, 'invoice'),
       };
     }
 
@@ -342,10 +369,16 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
           : isTh
           ? 'กำลังดำเนินการตรวจเช็คหน้างานและบันทึกข้อเท็จจริง'
           : 'Field inspection in progress. Preserving facts and tests.',
-        nextStep: isTh ? 'บันทึกผลการตรวจเช็กกับ Mr. Big' : 'Record field findings with Mr. Big',
-        actionLabel: isTh ? 'บันทึกกับ Mr. Big' : 'Talk to Mr. Big',
+        nextStep: isHomeWatch
+          ? (isTh ? 'ทำเช็กลิสต์และถ่ายรูปของรอบนี้' : 'Complete this visit’s checklist and photos')
+          : (isTh ? 'บันทึกผลการตรวจเช็กกับ Mr. Big' : 'Record field findings with Mr. Big'),
+        actionLabel: isHomeWatch ? (isTh ? 'ทำเช็กลิสต์รอบนี้' : 'Open Visit Checklist') : (isTh ? 'บันทึกกับ Mr. Big' : 'Talk to Mr. Big'),
         actionColor: 'bg-blue-600 hover:bg-blue-500 text-white font-black',
         onAction: () => {
+          if (isHomeWatch) {
+            document.getElementById('job-workspace-field-tools')?.scrollIntoView({ behavior: 'smooth' });
+            return;
+          }
           const el = document.getElementById('mr-big-assessment-card');
           if (el) {
             el.scrollIntoView({ behavior: 'smooth' });
@@ -746,12 +779,16 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
       {/* ========================================================================= */}
       {/* 3. CORE WORKFLOW ENGINE RENDERER (Clean, Progressive Disclosure) */}
       {/* ========================================================================= */}
-      <main className="max-w-4xl mx-auto w-full px-3 sm:px-6 py-4 flex-1 min-w-0">
-        {stateDetails.stage === 'direct_work_pending' ? (
+      <main id="job-workspace-field-tools" className="max-w-4xl mx-auto w-full px-3 sm:px-6 py-4 flex-1 min-w-0">
+        {stateDetails.stage === 'workflow_closed' ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-700">
+            {isTh ? 'งานนี้ไม่ได้ดำเนินการต่อ คุณยังลบงานร่างที่ไม่มีการอนุมัติหรือรับเงินได้' : 'This job is not going ahead. Unapproved, unpaid drafts can still be deleted.'}
+          </div>
+        ) : stateDetails.stage === 'workflow_pending' || stateDetails.stage === 'direct_work_pending' ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-700">
             <p className="font-bold text-slate-900">{isTh ? 'รายละเอียดงาน' : 'Job details'}</p>
             <p className="mt-2">{job.requestDescription || job.serviceType}</p>
-            <p className="mt-2 text-slate-500">{isTh ? 'เครื่องมือหน้างานจะแสดงเมื่อเริ่มทำงาน' : 'Field tools appear when work starts.'}</p>
+            <p className="mt-2 text-slate-500">{isTh ? 'ทำขั้นตอนด้านบนก่อน เครื่องมือหน้างานจะแสดงเมื่อเริ่มทำงาน' : 'Complete the action above before starting field work.'}</p>
           </div>
         ) : stateDetails.stage === 'before_inspection' ? (
           <BeforeInspectionWorkspaceView
@@ -810,7 +847,10 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
             onUpdateJob={onUpdateJob}
             onRecordPayment={(jobId, amt) => onRecordPayment(jobId, amt)}
             onAssignVendor={(vendor) => onAssignVendor(vendor)}
-            onCompleteJob={onCompleteJob}
+            onCompleteJob={() => {
+              onCompleteJob();
+              window.setTimeout(() => document.getElementById('job-workspace-btn-primary-action')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+            }}
             onResumePreviousJob={(prevId) => onSelectJob(prevId)}
           />
         ) : isElectricalService(job.serviceType) ? (
@@ -992,6 +1032,33 @@ export const JobWorkspaceView: React.FC<JobWorkspaceViewProps> = ({
           </button>
         </div>
       </main>
+
+      {isCustomerResponseOpen && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/60 flex items-end sm:items-center justify-center p-3" role="presentation" onClick={() => setIsCustomerResponseOpen(false)}>
+          <div role="dialog" aria-modal="true" aria-labelledby="customer-response-title" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl space-y-3" onClick={(event) => event.stopPropagation()}>
+            <h2 id="customer-response-title" className="text-lg font-bold text-slate-900">{isTh ? 'ลูกค้าตอบใบเสนอราคาอย่างไร?' : 'How did the customer respond?'}</h2>
+            <p className="text-sm text-slate-600">{isTh ? 'เลือกตามคำตอบจริงของลูกค้า งานที่ไม่ทำต่อจะออกจาก My Day' : 'Choose the actual response. Jobs not going ahead leave My Day.'}</p>
+            <button type="button" className="w-full min-h-[44px] rounded-xl bg-emerald-600 text-white font-bold" onClick={() => {
+              onUpdateJob((prev) => ({ ...prev, status: 'Approved', customerApprovedAt: new Date().toISOString(), waitingOn: 'none', waitingReason: undefined, nextFollowUpDate: undefined }));
+              setIsCustomerResponseOpen(false);
+            }}>{isTh ? 'อนุมัติ → ไปนัดหมาย' : 'Approved → Schedule'}</button>
+            <button type="button" className="w-full min-h-[44px] rounded-xl border border-blue-200 text-blue-800 font-bold" onClick={() => {
+              onUpdateJob((prev) => ({ ...prev, status: 'New', quoteSentAt: undefined, repairQuoteSentAt: undefined, waitingOn: 'none' }));
+              setIsCustomerResponseOpen(false);
+              onOpenQuotation(job.id, 'edit');
+            }}>{isTh ? 'ขอปรับราคา/ขอบเขต → แก้ใบเสนอราคา' : 'Request changes → Edit quote'}</button>
+            <button type="button" className="w-full min-h-[44px] rounded-xl border border-amber-200 text-amber-900 font-bold" onClick={() => {
+              onUpdateJob((prev) => ({ ...prev, status: 'Waiting Customer', waitingOn: 'customer', waitingReason: isTh ? 'ลูกค้ายังไม่ตัดสินใจ' : 'Customer is deciding' }));
+              setIsCustomerResponseOpen(false);
+            }}>{isTh ? 'ยังไม่ตัดสินใจ → รอติดตาม' : 'Not yet → Follow up later'}</button>
+            <button type="button" className="w-full min-h-[44px] rounded-xl border border-slate-200 text-slate-700 font-bold" onClick={() => {
+              onUpdateJob((prev) => ({ ...prev, status: 'Cancelled', waitingOn: 'none', waitingReason: isTh ? 'ลูกค้าไม่ดำเนินการต่อ' : 'Customer declined', actionRequired: undefined, nextFollowUpDate: undefined }));
+              setIsCustomerResponseOpen(false);
+            }}>{isTh ? 'ไม่ทำงานนี้แล้ว → จบเรื่อง' : 'Not going ahead → Close'}</button>
+            <button type="button" className="w-full min-h-[44px] text-slate-500" onClick={() => setIsCustomerResponseOpen(false)}>{isTh ? 'กลับ' : 'Back'}</button>
+          </div>
+        </div>
+      )}
 
       {/* Compact Appointment Modal */}
       <CompactAppointmentModal

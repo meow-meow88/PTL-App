@@ -2270,6 +2270,10 @@ export default function App() {
         onOpenQuotation={(jobId, action) => {
           handleOpenJobQuotation(jobId, action);
         }}
+        onOpenFinancialJob={(jobId, purpose) => {
+          setViewMode('main');
+          handleOpenFinancialJob(jobId, purpose);
+        }}
         onOpenQuickEstimate={() => setIsQuickEstimateOpen(true)}
         onOpenFindingModal={(item) => {
           setEditingItem(item || null);
@@ -2320,6 +2324,7 @@ export default function App() {
             ...prev,
             status: 'Completed',
             completedAt: new Date().toISOString(),
+            waitingOn: prev.status === 'Paid' ? 'none' : 'payment',
           }));
           setToastMessage({
             title: lang === 'th' ? 'บันทึกปิดงานเสร็จสมบูรณ์' : 'Job Completed',
